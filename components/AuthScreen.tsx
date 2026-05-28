@@ -21,24 +21,24 @@ export function AuthScreen({
   onSubmit,
 }: AuthScreenProps) {
   return (
-    <main className="flex min-h-screen items-center justify-center px-4 py-8 text-[var(--color-text)]">
-      <section className="grid w-full max-w-6xl overflow-hidden rounded-[2rem] border border-[var(--color-border)] bg-[var(--color-card)] shadow-[var(--app-shadow)] lg:grid-cols-[1.05fr_0.95fr]">
-        <div className="relative min-h-[34rem] overflow-hidden bg-[var(--color-soft)] p-8">
+    <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-pink-50 via-rose-100 to-indigo-100 dark:from-zinc-950 dark:via-zinc-900 dark:to-purple-950/20 px-4 py-8 text-zinc-800 dark:text-zinc-100">
+      <section className="grid w-full max-w-6xl overflow-hidden rounded-[2rem] border border-pink-200/80 bg-white/95 dark:bg-zinc-900/95 shadow-[0_20px_50px_rgba(136,65,95,0.12)] lg:grid-cols-[1.05fr_0.95fr] backdrop-blur-md">
+        <div className="relative min-h-[34rem] overflow-hidden bg-rose-50/50 dark:bg-zinc-800/40 p-8 border-r border-pink-100 dark:border-zinc-800">
           <div className="relative z-10 flex h-full flex-col justify-between">
             <div>
-              <p className="text-sm font-black uppercase text-[var(--color-primary)]">
+              <p className="text-xs font-black uppercase tracking-wider text-[var(--color-primary)]">
                 Couple App
               </p>
-              <h1 className="mt-5 max-w-xl text-5xl font-black leading-[1.02] text-[var(--color-text)]">
+              <h1 className="mt-5 max-w-xl text-5xl font-black leading-[1.02] text-zinc-800 dark:text-white">
                 Yêu nhau mỗi ngày, gọn trong một nơi.
               </h1>
-              <p className="mt-5 max-w-lg text-base leading-7 text-[var(--color-muted)]">
+              <p className="mt-5 max-w-lg text-sm font-semibold leading-7 text-zinc-500 dark:text-zinc-400">
                 Đăng ký thật nhanh bằng email và mật khẩu. Hồ sơ cá nhân và kết
                 nối couple sẽ được hỏi ở bước onboarding ngắn sau đó.
               </p>
             </div>
 
-            <div className="grid gap-3 rounded-3xl border border-[var(--color-border)] bg-white/80 p-4 backdrop-blur">
+            <div className="grid gap-3 rounded-3xl border border-pink-100 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900/90 p-4 shadow-sm">
               <MiniStat label="Bước 1" value="Email + mật khẩu" />
               <MiniStat label="Bước 2" value="Hoàn thiện hồ sơ" />
               <MiniStat label="Bước 3" value="Kết nối hoặc để sau" />
@@ -46,8 +46,8 @@ export function AuthScreen({
           </div>
         </div>
 
-        <div className="p-6 sm:p-8">
-          <div className="grid grid-cols-2 gap-2 rounded-2xl bg-[var(--color-soft)] p-1">
+        <div className="p-6 sm:p-8 flex flex-col justify-center">
+          <div className="grid grid-cols-2 gap-2 rounded-2xl bg-zinc-100 dark:bg-zinc-800 p-1">
             <ModeButton
               active={authMode === "register"}
               icon={UserPlus}
@@ -139,11 +139,11 @@ function FormField({
 }) {
   return (
     <label className="grid gap-2">
-      <span className="text-sm font-black text-[var(--color-muted)]">{label}</span>
-      <span className="flex h-14 items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 transition focus-within:border-[var(--color-accent)] focus-within:ring-4 focus-within:ring-[var(--color-soft-strong)]">
-        <Icon className="h-5 w-5 text-[var(--color-faint)]" />
+      <span className="text-sm font-black text-zinc-700 dark:text-zinc-300">{label}</span>
+      <span className="flex h-14 items-center gap-3 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800/80 px-4 transition focus-within:border-[var(--color-primary)] focus-within:ring-4 focus-within:ring-[var(--color-primary-soft)]">
+        <Icon className="h-5 w-5 text-zinc-400" />
         <input
-          className="h-full min-w-0 flex-1 bg-transparent text-base text-[var(--color-text)] outline-none placeholder:text-[var(--color-faint)]"
+          className="h-full min-w-0 flex-1 bg-transparent text-base text-zinc-900 dark:text-white outline-none placeholder:text-zinc-400 font-semibold"
           onChange={(event) => onChange(event.target.value)}
           placeholder={placeholder}
           type={type}
@@ -157,8 +157,8 @@ function FormField({
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-4">
-      <span className="text-sm font-bold text-[var(--color-muted)]">{label}</span>
-      <span className="text-sm font-black text-[var(--color-text)]">{value}</span>
+      <span className="text-sm font-bold text-zinc-500 dark:text-zinc-400">{label}</span>
+      <span className="text-sm font-black text-zinc-800 dark:text-white">{value}</span>
     </div>
   );
 }
