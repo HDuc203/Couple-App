@@ -9,7 +9,7 @@ type ProfileOnboardingFormProps = {
 };
 
 const inputClass =
-  "w-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm font-semibold text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-faint)] focus:border-[var(--color-primary)] focus:ring-4 focus:ring-[var(--color-primary-soft)]";
+  "w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800/80 px-4 py-3 text-sm font-semibold text-zinc-900 dark:text-white outline-none transition placeholder:text-zinc-400 focus:border-[var(--color-primary)] focus:ring-4 focus:ring-[var(--color-primary-soft)]";
 
 function FieldLabel({
   children,
@@ -19,9 +19,9 @@ function FieldLabel({
   required?: boolean;
 }) {
   return (
-    <span className="mb-2 block text-sm font-bold text-[var(--color-muted)]">
+    <span className="mb-2 block text-sm font-black text-zinc-700 dark:text-zinc-300">
       {children}
-      {required ? <span className="text-[var(--color-primary)]"> *</span> : null}
+      {required ? <span className="text-red-500 font-bold"> *</span> : null}
     </span>
   );
 }
@@ -35,41 +35,41 @@ export function ProfileOnboardingForm({
   return (
     <main
       data-theme={theme}
-      className="min-h-screen bg-[var(--app-gradient)] px-4 py-8 text-[var(--color-text)]"
+      className="min-h-screen bg-gradient-to-br from-pink-50 via-rose-100 to-indigo-100 dark:from-zinc-950 dark:via-zinc-900 dark:to-purple-950/20 px-4 py-8 text-zinc-800 dark:text-zinc-100"
     >
       <section className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-        <aside className="rounded-[2rem] border border-[var(--color-border)] bg-[var(--color-card)] p-7 shadow-[var(--app-shadow)] lg:sticky lg:top-8 lg:h-fit">
+        <aside className="rounded-[2rem] border border-pink-200/80 bg-white/95 dark:bg-zinc-900/95 p-7 shadow-[0_20px_50px_rgba(136,65,95,0.1)] lg:sticky lg:top-8 lg:h-fit backdrop-blur-md">
           <div className="mb-8 grid size-14 place-items-center rounded-3xl bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
             <Heart className="size-7" />
           </div>
-          <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--color-faint)]">
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-[var(--color-primary)]">
             Onboarding
           </p>
-          <h1 className="mt-3 text-3xl font-black leading-tight md:text-5xl">
+          <h1 className="mt-3 text-3xl font-black leading-tight md:text-5xl text-zinc-800 dark:text-white">
             Hoàn thiện hồ sơ của bạn
           </h1>
-          <p className="mt-4 text-sm font-semibold leading-6 text-[var(--color-muted)]">
+          <p className="mt-4 text-sm font-semibold leading-6 text-zinc-500 dark:text-zinc-400">
             Một vài thông tin cơ bản giúp app cá nhân hóa dashboard, theme và
             các tính năng couple sau này.
           </p>
 
           <div className="mt-8 grid gap-3">
-            <div className="flex items-center gap-3 rounded-2xl bg-[var(--color-soft)] p-4">
+            <div className="flex items-center gap-3 rounded-2xl bg-pink-50 dark:bg-zinc-800/80 p-4 border border-pink-100/40 dark:border-zinc-700/50">
               <UserRound className="size-5 text-[var(--color-primary)]" />
-              <p className="text-sm font-bold text-[var(--color-muted)]">
+              <p className="text-sm font-bold text-zinc-600 dark:text-zinc-300">
                 Bạn có thể kết nối couple sau trong Cài đặt.
               </p>
             </div>
-            <div className="flex items-center gap-3 rounded-2xl bg-[var(--color-soft)] p-4">
+            <div className="flex items-center gap-3 rounded-2xl bg-pink-50 dark:bg-zinc-800/80 p-4 border border-pink-100/40 dark:border-zinc-700/50">
               <Sparkles className="size-5 text-[var(--color-primary)]" />
-              <p className="text-sm font-bold text-[var(--color-muted)]">
+              <p className="text-sm font-bold text-zinc-600 dark:text-zinc-300">
                 Theme sẽ được lưu vào Supabase profile.
               </p>
             </div>
           </div>
         </aside>
 
-        <section className="rounded-[2rem] border border-[var(--color-border)] bg-[var(--color-card)] p-5 shadow-[var(--app-shadow)] md:p-7">
+        <section className="rounded-[2rem] border border-pink-200/80 bg-white/95 dark:bg-zinc-900/95 p-5 shadow-[0_20px_50px_rgba(136,65,95,0.1)] md:p-7 backdrop-blur-md">
           {error ? (
             <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
               {error}
@@ -163,7 +163,7 @@ export function ProfileOnboardingForm({
             <fieldset className="md:col-span-2">
               <FieldLabel>Theme</FieldLabel>
               <div className="grid gap-3 sm:grid-cols-2">
-                <label className="flex cursor-pointer items-center justify-between rounded-2xl border border-[#efd6de] bg-[#fff3f7] px-4 py-3 text-sm font-black text-[#88415f] transition hover:scale-[1.01]">
+                <label className="flex cursor-pointer items-center justify-between rounded-2xl border border-pink-200 dark:border-pink-900/60 bg-pink-50/50 dark:bg-pink-950/20 px-4 py-3 text-sm font-black text-[#88415f] dark:text-pink-300 transition hover:scale-[1.01]">
                   Pink theme
                   <input
                     type="radio"
@@ -172,7 +172,7 @@ export function ProfileOnboardingForm({
                     defaultChecked={theme === "pink"}
                   />
                 </label>
-                <label className="flex cursor-pointer items-center justify-between rounded-2xl border border-[#ead7a4] bg-[#fff3cf] px-4 py-3 text-sm font-black text-[#9a6a13] transition hover:scale-[1.01]">
+                <label className="flex cursor-pointer items-center justify-between rounded-2xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/30 dark:bg-amber-950/20 px-4 py-3 text-sm font-black text-[#9a6a13] dark:text-amber-300 transition hover:scale-[1.01]">
                   Gold theme
                   <input
                     type="radio"
@@ -184,7 +184,7 @@ export function ProfileOnboardingForm({
               </div>
             </fieldset>
 
-            <label className="flex items-center gap-3 rounded-2xl bg-[var(--color-soft)] px-4 py-3 text-sm font-bold text-[var(--color-muted)] md:col-span-2">
+            <label className="flex items-center gap-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200/50 dark:border-zinc-700/50 px-4 py-3 text-sm font-bold text-zinc-600 dark:text-zinc-300 md:col-span-2 cursor-pointer">
               <input
                 type="checkbox"
                 name="period_tracking_enabled"
