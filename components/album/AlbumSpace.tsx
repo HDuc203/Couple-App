@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useTransition } from "react";
+import { useState, useEffect, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   Images,
@@ -144,6 +144,7 @@ export function AlbumSpace({
 }: AlbumSpaceProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const supabase = useMemo(() => createClient(), []);
 
   const coupleId = currentCouple?.couple?.id ?? null;
   const partnerName = partnerProfile?.display_name ?? "Người ấy";
@@ -164,6 +165,7 @@ export function AlbumSpace({
   // Album creation fields
   const [albumTitle, setAlbumTitle] = useState("");
   const [albumError, setAlbumError] = useState("");
+  const [isSavingAlbum, setSavingAlbum] = useState(false);
 
   // Photo addition fields
   const [photoUrl, setPhotoUrl] = useState("");
@@ -208,22 +210,34 @@ export function AlbumSpace({
 
   // Sync server changes
   useEffect(() => {
-    setAlbums(initialAlbums);
+    setAlbums((current) => {
+      const combined = [...current, ...initialAlbums];
+      return Array.from(new Map(combined.map((item) => [item.id, item])).values()).sort((a, b) => {
+        const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return bTime - aTime;
+      });
+    });
   }, [initialAlbums]);
 
   useEffect(() => {
-    setPhotos(initialPhotos);
+    setPhotos((current) => {
+      const combined = [...current, ...initialPhotos];
+      return Array.from(new Map(combined.map((item) => [item.id, item])).values()).sort((a, b) => {
+        const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return bTime - aTime;
+      });
+    });
   }, [initialPhotos]);
 
   // Real-time synchronization
   useEffect(() => {
     if (!coupleId) return;
 
-    const supabase = createClient();
-
     // Subscribe to photo albums channel
     const albumsChannel = supabase
-      .channel(`photo_albums_sync:${coupleId}`)
+      .channel(`photo_albums:${coupleId}`)
       .on(
         "postgres_changes",
         {
@@ -235,7 +249,15 @@ export function AlbumSpace({
         async (payload) => {
           if (payload.eventType === "INSERT") {
             const newAlbum = payload.new as Tables<"photo_albums">;
-            setAlbums((prev) => [newAlbum, ...prev]);
+            setAlbums((prev) => {
+              if (prev.some((item) => item.id === newAlbum.id)) return prev;
+              return [newAlbum, ...prev];
+            });
+          } else if (payload.eventType === "UPDATE") {
+            const updatedAlbum = payload.new as Tables<"photo_albums">;
+            setAlbums((prev) =>
+              prev.map((item) => (item.id === updatedAlbum.id ? updatedAlbum : item))
+            );
           } else if (payload.eventType === "DELETE") {
             const deleted = payload.old as { id: string };
             setAlbums((prev) => prev.filter((item) => item.id !== deleted.id));
@@ -250,7 +272,7 @@ export function AlbumSpace({
 
     // Subscribe to photos channel
     const photosChannel = supabase
-      .channel(`photos_sync:${coupleId}`)
+      .channel(`photos:${coupleId}`)
       .on(
         "postgres_changes",
         {
@@ -262,7 +284,10 @@ export function AlbumSpace({
         async (payload) => {
           if (payload.eventType === "INSERT") {
             const newPhoto = payload.new as Tables<"photos">;
-            setPhotos((prev) => [newPhoto, ...prev]);
+            setPhotos((prev) => {
+              if (prev.some((p) => p.id === newPhoto.id)) return prev;
+              return [newPhoto, ...prev];
+            });
           } else if (payload.eventType === "UPDATE") {
             const updated = payload.new as Tables<"photos">;
             setPhotos((prev) =>
@@ -286,7 +311,7 @@ export function AlbumSpace({
       supabase.removeChannel(albumsChannel);
       supabase.removeChannel(photosChannel);
     };
-  }, [coupleId]);
+  }, [coupleId, supabase]);
 
   // Create new photo album
   const handleCreateAlbum = async (e: React.FormEvent) => {
@@ -296,7 +321,7 @@ export function AlbumSpace({
       return;
     }
 
-    const supabase = createClient();
+    setSavingAlbum(true);
     const { error } = await supabase.from("photo_albums").insert({
       couple_id: coupleId,
       title: albumTitle.trim(),
@@ -305,6 +330,7 @@ export function AlbumSpace({
 
     if (error) {
       setAlbumError(`Không thể tạo album: ${error.message}`);
+      setSavingAlbum(false);
     } else {
       // Gửi thông báo đến partner
       if (partnerProfile) {
@@ -322,6 +348,7 @@ export function AlbumSpace({
       setIsOpenAlbumModal(false);
       setAlbumTitle("");
       setAlbumError("");
+      setSavingAlbum(false);
       startTransition(() => {
         router.refresh();
       });
@@ -339,7 +366,6 @@ export function AlbumSpace({
     }
 
     const targetAlbumId = photoAlbumId || null;
-    const supabase = createClient();
 
     // Pack caption and comments empty array inside JSON
     const packedCaption = JSON.stringify({

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useTransition, useRef, useCallback } from "react";
+import { useState, useEffect, useTransition, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Heart, Check, Loader2, Sparkles, AlertCircle, HeartHandshake, Inbox, Clock, Eye, EyeOff } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -337,6 +337,7 @@ export function LoveSpace({
 }: LoveSpaceProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const supabase = useMemo(() => createClient(), []);
 
   const coupleId = currentCouple?.couple?.id ?? null;
   const partnerName = partnerProfile?.display_name ?? "Người ấy";
@@ -347,6 +348,17 @@ export function LoveSpace({
   const [reactionSuccess, setReactionSuccess] = useState<"hug" | "care" | "chat" | null>(null);
   const [showHiddenNotes, setShowHiddenNotes] = useState(false);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+
+  const partnerProfileRef = useRef(partnerProfile);
+  const profileRef = useRef(profile);
+
+  useEffect(() => {
+    partnerProfileRef.current = partnerProfile;
+  }, [partnerProfile]);
+
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
 
   // reactions: map[love_note_id] → { mine: LoveNoteReaction | null, partner: LoveNoteReaction | null }
   const [reactions, setReactions] = useState<Map<string, { mine: LoveNoteReaction | null; partner: LoveNoteReaction | null }>>(() => {
@@ -362,11 +374,56 @@ export function LoveSpace({
     return map;
   });
 
-  useEffect(() => { setPartnerMood(initialPartnerMood); }, [initialPartnerMood]);
-  useEffect(() => { setLoveNotes(initialLoveNotes); }, [initialLoveNotes]);
+  useEffect(() => {
+    // Initial client sync for fresh mood
+    const syncFreshPartnerMood = async () => {
+      if (!partnerProfile) return;
+      const { data: pMood } = await supabase
+        .from("mood_logs")
+        .select("*")
+        .eq("user_id", partnerProfile.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (pMood) {
+        setPartnerMood((current) => {
+          if (!current) return pMood;
+          const currentMilli = current.created_at ? new Date(current.created_at).getTime() : 0;
+          const freshMilli = pMood.created_at ? new Date(pMood.created_at).getTime() : 0;
+          return freshMilli > currentMilli ? pMood : current;
+        });
+      }
+    };
+    syncFreshPartnerMood();
+  }, [partnerProfile?.id, supabase]);
+
+  useEffect(() => {
+    if (initialPartnerMood) {
+      setPartnerMood((current) => {
+        if (!current) return initialPartnerMood;
+        const currentMilli = current.created_at ? new Date(current.created_at).getTime() : 0;
+        const propMilli = initialPartnerMood.created_at ? new Date(initialPartnerMood.created_at).getTime() : 0;
+        return propMilli > currentMilli ? initialPartnerMood : current;
+      });
+    } else {
+      setPartnerMood(null);
+    }
+  }, [initialPartnerMood]);
+
+  useEffect(() => {
+    setLoveNotes((current) => {
+      // Deduplicate and merge prop notes and local notes, then sort by created_at descending
+      const combined = [...current, ...initialLoveNotes];
+      const unique = Array.from(new Map(combined.map((item) => [item.id, item])).values());
+      return unique.sort((a, b) => {
+        const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return bTime - aTime;
+      });
+    });
+  }, [initialLoveNotes]);
 
   const handleHideNote = useCallback(async (noteId: string, isHidden: boolean) => {
-    const supabase = createClient();
     setLoveNotes((prev) =>
       prev.map((n) => (n.id === noteId ? { ...n, is_hidden: isHidden } : n))
     );
@@ -374,69 +431,133 @@ export function LoveSpace({
       .from("love_notes")
       .update({ is_hidden: isHidden })
       .eq("id", noteId);
-  }, []);
+  }, [supabase]);
 
   // ── Realtime subscription ──
   useEffect(() => {
     if (!coupleId) return;
-    const supabase = createClient();
 
-    const channel = supabase
-      .channel(`love_space_sync:${coupleId}`)
-      .on("postgres_changes", {
-        event: "INSERT", schema: "public", table: "mood_logs",
-        filter: `couple_id=eq.${coupleId}`,
-      }, (payload) => {
+    console.log('[LOVE REALTIME] Subscribing with coupleId:', coupleId);
+    let channel = supabase.channel(`love_space_sync:${coupleId}`);
+
+    // Listen to mood changes
+    channel = channel.on("postgres_changes", {
+      event: "*", schema: "public", table: "mood_logs",
+      filter: `couple_id=eq.${coupleId}`,
+    }, (payload) => {
+      console.log('[REALTIME mood event in LoveSpace]', payload);
+      const partnerProfileVal = partnerProfileRef.current;
+      if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
         const nm = payload.new as Tables<"mood_logs">;
-        if (partnerProfile && nm.user_id === partnerProfile.id) setPartnerMood(nm);
-      })
-      .on("postgres_changes", {
-        event: "INSERT", schema: "public", table: "love_notes",
-        filter: `couple_id=eq.${coupleId}`,
-      }, (payload) => {
+        if (partnerProfileVal && nm.user_id === partnerProfileVal.id) {
+          setPartnerMood(nm);
+        }
+      } else if (payload.eventType === "DELETE") {
+        const oldMood = payload.old as { id: string };
+        setPartnerMood((current) => (current && oldMood.id === current.id ? null : current));
+      }
+    });
+
+    // Listen to love notes changes
+    channel = channel.on("postgres_changes", {
+      event: "*", schema: "public", table: "love_notes",
+      filter: `couple_id=eq.${coupleId}`,
+    }, (payload) => {
+      console.log('[LOVE REALTIME note event]', payload);
+      if (payload.eventType === "INSERT") {
         const nn = payload.new as Tables<"love_notes">;
-        setLoveNotes((prev) => [nn, ...prev].slice(0, 30));
-      })
-      // Reactions realtime
-      .on("postgres_changes", {
-        event: "INSERT", schema: "public", table: "love_note_reactions",
+        setLoveNotes((prev) => {
+          if (prev.some((item) => item.id === nn.id)) return prev;
+          return [nn, ...prev].slice(0, 30);
+        });
+        startTransition(() => {
+          router.refresh();
+        });
+      } else if (payload.eventType === "UPDATE") {
+        const nn = payload.new as Tables<"love_notes">;
+        setLoveNotes((prev) => prev.map((item) => item.id === nn.id ? nn : item));
+        startTransition(() => {
+          router.refresh();
+        });
+      } else if (payload.eventType === "DELETE") {
+        const oldNote = payload.old as { id: string };
+        setLoveNotes((prev) => prev.filter((item) => item.id !== oldNote.id));
+        startTransition(() => {
+          router.refresh();
+        });
+      }
+    });
+
+    const partnerId = partnerProfileRef.current?.id;
+    const myId = profileRef.current.id;
+
+    // Listen to reactions of partner
+    if (partnerId) {
+      channel = channel.on("postgres_changes", {
+        event: "*", schema: "public", table: "love_note_reactions",
+        filter: `user_id=eq.${partnerId}`,
       }, (payload) => {
+        if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
+          const nr = payload.new as LoveNoteReaction;
+          setReactions((prev) => {
+            const map = new Map(prev);
+            const existing = map.get(nr.love_note_id) ?? { mine: null, partner: null };
+            map.set(nr.love_note_id, { ...existing, partner: nr });
+            return map;
+          });
+        } else if (payload.eventType === "DELETE") {
+          const oldReaction = payload.old as { id: string };
+          setReactions((prev) => {
+            const map = new Map(prev);
+            for (const [noteId, val] of map.entries()) {
+              if (val.partner?.id === oldReaction.id) {
+                map.set(noteId, { ...val, partner: null });
+                break;
+              }
+            }
+            return map;
+          });
+        }
+      });
+    }
+
+    // Listen to reactions of self
+    channel = channel.on("postgres_changes", {
+      event: "*", schema: "public", table: "love_note_reactions",
+      filter: `user_id=eq.${myId}`,
+    }, (payload) => {
+      if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
         const nr = payload.new as LoveNoteReaction;
         setReactions((prev) => {
           const map = new Map(prev);
           const existing = map.get(nr.love_note_id) ?? { mine: null, partner: null };
-          if (nr.user_id === profile.id) {
-            map.set(nr.love_note_id, { ...existing, mine: nr });
-          } else if (partnerProfile && nr.user_id === partnerProfile.id) {
-            map.set(nr.love_note_id, { ...existing, partner: nr });
-          }
+          map.set(nr.love_note_id, { ...existing, mine: nr });
           return map;
         });
-      })
-      .on("postgres_changes", {
-        event: "UPDATE", schema: "public", table: "love_note_reactions",
-      }, (payload) => {
-        const nr = payload.new as LoveNoteReaction;
+      } else if (payload.eventType === "DELETE") {
+        const oldReaction = payload.old as { id: string };
         setReactions((prev) => {
           const map = new Map(prev);
-          const existing = map.get(nr.love_note_id) ?? { mine: null, partner: null };
-          if (nr.user_id === profile.id) {
-            map.set(nr.love_note_id, { ...existing, mine: nr });
-          } else if (partnerProfile && nr.user_id === partnerProfile.id) {
-            map.set(nr.love_note_id, { ...existing, partner: nr });
+          for (const [noteId, val] of map.entries()) {
+            if (val.mine?.id === oldReaction.id) {
+              map.set(noteId, { ...val, mine: null });
+              break;
+            }
           }
           return map;
         });
-      })
-      .subscribe();
+      }
+    });
+
+    channel.subscribe((status) => {
+      console.log('[LOVE REALTIME status]', status);
+    });
 
     return () => { supabase.removeChannel(channel); };
-  }, [coupleId, partnerProfile?.id]);
+  }, [coupleId, supabase]);
 
   // ── Handle react to note ──
   const handleReactToNote = useCallback(async (noteId: string, type: ReactionType) => {
-    const supabase = createClient();
-
     // Optimistic update first
     const existing = reactions.get(noteId) ?? { mine: null, partner: null };
     const optimisticReaction: LoveNoteReaction = {
@@ -488,13 +609,12 @@ export function LoveSpace({
         });
       }
     }
-  }, [reactions, profile.id]);
+  }, [reactions, profile.id, supabase]);
 
   // ── Send love note ──
   const handleReaction = async (type: "hug" | "care" | "chat") => {
     if (!coupleId || !partnerProfile) return;
     setReactionSuccess(type);
-    const supabase = createClient();
 
     const partnerConfig = getMoodConfig(partnerMood?.mood ?? null);
     const pmd = `${partnerConfig.emoji} ${partnerConfig.label}`;
@@ -544,13 +664,6 @@ export function LoveSpace({
       content: messageText.trim() ? messageText.trim() : message,
       link: "/love",
     });
-
-    const local: Tables<"love_notes"> = {
-      id: Math.random().toString(), couple_id: coupleId, sender_id: profile.id,
-      receiver_id: partnerProfile.id, message, reveal_at: new Date().toISOString(),
-      is_read: false, is_hidden: false, created_at: new Date().toISOString(),
-    };
-    setLoveNotes((prev) => [local, ...prev]);
 
     setTimeout(() => { setReactionSuccess(null); setMessageText(""); }, 1200);
     startTransition(() => router.refresh());

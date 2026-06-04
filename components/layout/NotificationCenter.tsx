@@ -5,6 +5,7 @@ import {
   Bell, X, Calendar, Cake, Droplet, Heart, Sparkles,
   MessageSquare, HeartHandshake, Image as ImageIcon, Check, Trash2, EyeOff
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Tables } from "@/types/database";
 import type { Profile } from "@/lib/profile";
@@ -24,9 +25,9 @@ type SmartReminder = {
 };
 
 // ─── Reminder generation rules ───────────────────────────────────────────────
-const ANNIVERSARY_WINDOWS = [7, 5, 3, 1, 0];
-const BIRTHDAY_WINDOWS    = [7, 3, 1, 0];
-const PERIOD_WINDOWS      = [5, 3, 1, 0]; // 0 = đang trong kỳ
+const ANNIVERSARY_WINDOWS = [7, 6, 5, 4, 3, 2, 1, 0];
+const BIRTHDAY_WINDOWS    = [7, 6, 5, 4, 3, 2, 1, 0];
+const PERIOD_WINDOWS      = [7, 6, 5, 4, 3, 2, 1, 0]; // 0 = đang trong kỳ
 
 // Helper: số ngày giữa today và targetDate (>0 = tương lai, 0 = hôm nay, <0 = đã qua)
 function diffDays(today: Date, target: Date): number {
@@ -55,6 +56,7 @@ export function NotificationCenter({ profile }: NotificationCenterProps) {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const supabase = useMemo(() => createClient(), []);
+  const router = useRouter();
 
   // ─── 1. KHỞI TẠO: purge cũ + fetch activities + fetch dismissed ─────────
   useEffect(() => {
@@ -96,6 +98,66 @@ export function NotificationCenter({ profile }: NotificationCenterProps) {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [profile.id]);
+
+  // ─── 2.5. CONNECTION REALTIME SYNC ──────────────────────────────────────────
+  useEffect(() => {
+    let activeChannel: any = null;
+    let isMounted = true;
+
+    const setupSubscription = async () => {
+      const { data: memberData } = await supabase
+        .from("couple_members")
+        .select("couple_id")
+        .eq("user_id", profile.id)
+        .maybeSingle();
+
+      if (!isMounted) return;
+
+      const coupleId = memberData?.couple_id;
+      if (coupleId) {
+        activeChannel = supabase
+          .channel(`couple_members_sync:${profile.id}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "couple_members",
+              filter: `couple_id=eq.${coupleId}`,
+            },
+            () => {
+              router.refresh();
+            }
+          )
+          .subscribe();
+      } else {
+        activeChannel = supabase
+          .channel(`user_members_sync:${profile.id}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "couple_members",
+              filter: `user_id=eq.${profile.id}`,
+            },
+            () => {
+              router.refresh();
+            }
+          )
+          .subscribe();
+      }
+    };
+
+    setupSubscription();
+
+    return () => {
+      isMounted = false;
+      if (activeChannel) {
+        supabase.removeChannel(activeChannel);
+      }
+    };
+  }, [profile.id, supabase, router]);
 
   // ─── 3. GENERATE REMINDERS: chạy lần đầu + mỗi 30 phút ─────────────────
   useEffect(() => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useTransition } from "react";
+import { useState, useEffect, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   BookOpen,
@@ -154,6 +154,7 @@ export function JournalSpace({
 }: JournalSpaceProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const supabase = useMemo(() => createClient(), []);
 
   const coupleId = currentCouple?.couple?.id ?? null;
   const partnerName = partnerProfile?.display_name ?? "Người ấy";
@@ -197,14 +198,21 @@ export function JournalSpace({
 
   // Sync state with server changes
   useEffect(() => {
-    setEntries(initialEntries);
+    setEntries((current) => {
+      const combined = [...current, ...initialEntries];
+      const unique = Array.from(new Map(combined.map((item) => [item.id, item])).values());
+      return unique.sort((a, b) => {
+        const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return bTime - aTime;
+      });
+    });
   }, [initialEntries]);
 
   // Real-time synchronization
   useEffect(() => {
     if (!coupleId) return;
 
-    const supabase = createClient();
     const channel = supabase
       .channel(`diary_entries_sync:${coupleId}`)
       .on(
@@ -218,7 +226,10 @@ export function JournalSpace({
         async (payload) => {
           if (payload.eventType === "INSERT") {
             const newEntry = payload.new as Tables<"diary_entries">;
-            setEntries((prev) => [newEntry, ...prev]);
+            setEntries((prev) => {
+              if (prev.some((item) => item.id === newEntry.id)) return prev;
+              return [newEntry, ...prev];
+            });
           } else if (payload.eventType === "UPDATE") {
             const updated = payload.new as Tables<"diary_entries">;
             setEntries((prev) =>
@@ -239,7 +250,7 @@ export function JournalSpace({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [coupleId]);
+  }, [coupleId, supabase]);
 
   // Open creation modal
   const handleOpenCreate = () => {
@@ -360,7 +371,6 @@ export function JournalSpace({
 
   const handleConfirmDelete = async () => {
     if (!deleteId) return;
-    const supabase = createClient();
     const { error } = await supabase.from("diary_entries").delete().eq("id", deleteId);
 
     if (error) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useTransition } from "react";
+import { useState, useEffect, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   Sparkles,
@@ -89,6 +89,7 @@ export function FutureSpace({
 }: FutureSpaceProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const supabase = useMemo(() => createClient(), []);
 
   const coupleId = currentCouple?.couple?.id ?? null;
   const partnerName = partnerProfile?.display_name ?? "Người ấy";
@@ -118,14 +119,21 @@ export function FutureSpace({
 
   // Sync state values on initial server props change
   useEffect(() => {
-    setItems(initialItems);
+    setItems((current) => {
+      const combined = [...current, ...initialItems];
+      const unique = Array.from(new Map(combined.map((item) => [item.id, item])).values());
+      return unique.sort((a, b) => {
+        const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return bTime - aTime;
+      });
+    });
   }, [initialItems]);
 
   // Real-time synchronization
   useEffect(() => {
     if (!coupleId) return;
 
-    const supabase = createClient();
     const channel = supabase
       .channel(`bucket_list_sync:${coupleId}`)
       .on(
@@ -139,7 +147,10 @@ export function FutureSpace({
         async (payload) => {
           if (payload.eventType === "INSERT") {
             const newItem = payload.new as Tables<"bucket_list">;
-            setItems((prev) => [newItem, ...prev]);
+            setItems((prev) => {
+              if (prev.some((item) => item.id === newItem.id)) return prev;
+              return [newItem, ...prev];
+            });
           } else if (payload.eventType === "UPDATE") {
             const updated = payload.new as Tables<"bucket_list">;
             setItems((prev) =>
@@ -160,7 +171,7 @@ export function FutureSpace({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [coupleId]);
+  }, [coupleId, supabase]);
 
   // Open modal
   const handleOpenCreate = () => {
@@ -265,7 +276,6 @@ export function FutureSpace({
 
   const handleConfirmDelete = async () => {
     if (!deleteId) return;
-    const supabase = createClient();
     const { error } = await supabase.from("bucket_list").delete().eq("id", deleteId);
 
     if (error) {

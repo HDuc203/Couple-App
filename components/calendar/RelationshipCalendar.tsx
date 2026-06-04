@@ -99,6 +99,7 @@ export function RelationshipCalendar({
 }: RelationshipCalendarProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const supabase = useMemo(() => createClient(), []);
 
   const coupleId = currentCouple?.couple?.id ?? null;
   const partnerName = partnerProfile?.display_name ?? "Người ấy";
@@ -141,22 +142,33 @@ export function RelationshipCalendar({
 
   // Sync state values on initial server props change
   useEffect(() => {
-    setSpecialDates(initialSpecialDates);
+    setSpecialDates((current) => {
+      const combined = [...current, ...initialSpecialDates];
+      return Array.from(new Map(combined.map((item) => [item.id, item])).values()).sort((a, b) => a.date.localeCompare(b.date));
+    });
   }, [initialSpecialDates]);
 
   useEffect(() => {
-    setPeriodLogs(initialPeriodLogs);
+    setPeriodLogs((current) => {
+      const combined = [...current, ...initialPeriodLogs];
+      return Array.from(new Map(combined.map((item) => [item.id, item])).values());
+    });
   }, [initialPeriodLogs]);
 
   useEffect(() => {
-    setTimelineItems(initialTimelineItems);
+    setTimelineItems((current) => {
+      const combined = [...current, ...initialTimelineItems];
+      return Array.from(new Map(combined.map((item) => [item.id, item])).values()).sort((a, b) => {
+        const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return bTime - aTime;
+      });
+    });
   }, [initialTimelineItems]);
 
   // Real-time synchronization
   useEffect(() => {
     if (!coupleId) return;
-
-    const supabase = createClient();
 
     const datesChannel = supabase
       .channel(`special_dates_sync:${coupleId}`)
@@ -166,7 +178,15 @@ export function RelationshipCalendar({
         async (payload) => {
           if (payload.eventType === "INSERT") {
             const newDate = payload.new as Tables<"special_dates">;
-            setSpecialDates((prev) => [...prev, newDate].sort((a, b) => a.date.localeCompare(b.date)));
+            setSpecialDates((prev) => {
+              if (prev.some((d) => d.id === newDate.id)) return prev;
+              return [...prev, newDate].sort((a, b) => a.date.localeCompare(b.date));
+            });
+          } else if (payload.eventType === "UPDATE") {
+            const updatedDate = payload.new as Tables<"special_dates">;
+            setSpecialDates((prev) =>
+              prev.map((d) => (d.id === updatedDate.id ? updatedDate : d)).sort((a, b) => a.date.localeCompare(b.date))
+            );
           } else if (payload.eventType === "DELETE") {
             const deleted = payload.old as { id: string };
             setSpecialDates((prev) => prev.filter((d) => d.id !== deleted.id));
@@ -178,19 +198,39 @@ export function RelationshipCalendar({
       )
       .subscribe();
 
-    const periodChannel = supabase
-      .channel(`period_tracking_sync`)
-      .on(
+    const handlePeriodChange = (payload: any) => {
+      if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
+        const newLog = payload.new as Tables<"period_tracking">;
+        setPeriodLogs((prev) => {
+          const exists = prev.some((p) => p.id === newLog.id);
+          if (exists) {
+            return prev.map((p) => (p.id === newLog.id ? newLog : p));
+          } else {
+            return [...prev, newLog];
+          }
+        });
+      } else if (payload.eventType === "DELETE") {
+        const oldLog = payload.old as { id: string };
+        setPeriodLogs((prev) => prev.filter((p) => p.id !== oldLog.id));
+      }
+      startTransition(() => router.refresh());
+    };
+
+    let periodChannel = supabase.channel(`period_tracking_sync:${profile.id}`);
+    periodChannel = periodChannel.on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "period_tracking", filter: `user_id=eq.${profile.id}` },
+      handlePeriodChange
+    );
+
+    if (partnerProfile) {
+      periodChannel = periodChannel.on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "period_tracking" },
-        async (payload) => {
-          // Re-fetch all permitted logs on change
-          const { data } = await supabase.from("period_tracking").select("*");
-          if (data) setPeriodLogs(data);
-          startTransition(() => router.refresh());
-        }
-      )
-      .subscribe();
+        { event: "*", schema: "public", table: "period_tracking", filter: `user_id=eq.${partnerProfile.id}` },
+        handlePeriodChange
+      );
+    }
+    periodChannel.subscribe();
 
     const timelineChannel = supabase
       .channel(`timeline_sync:${coupleId}`)
@@ -200,7 +240,18 @@ export function RelationshipCalendar({
         async (payload) => {
           if (payload.eventType === "INSERT") {
             const newItem = payload.new as Tables<"relationship_timeline">;
-            setTimelineItems((prev) => [newItem, ...prev]);
+            setTimelineItems((prev) => {
+              if (prev.some((item) => item.id === newItem.id)) return prev;
+              return [newItem, ...prev];
+            });
+          } else if (payload.eventType === "UPDATE") {
+            const updatedItem = payload.new as Tables<"relationship_timeline">;
+            setTimelineItems((prev) =>
+              prev.map((item) => (item.id === updatedItem.id ? updatedItem : item))
+            );
+          } else if (payload.eventType === "DELETE") {
+            const deletedItem = payload.old as { id: string };
+            setTimelineItems((prev) => prev.filter((item) => item.id !== deletedItem.id));
           }
           startTransition(() => router.refresh());
         }
@@ -212,7 +263,7 @@ export function RelationshipCalendar({
       supabase.removeChannel(periodChannel);
       supabase.removeChannel(timelineChannel);
     };
-  }, [coupleId]);
+  }, [coupleId, profile.id, partnerProfile?.id, supabase]);
 
   // Calendar Calculations
   const daysInMonth = (month: number, year: number) => new Date(year, month + 1, 0).getDate();
@@ -429,7 +480,6 @@ export function RelationshipCalendar({
 
   const handleConfirmDeleteDate = async () => {
     if (!deleteId) return;
-    const supabase = createClient();
     const { error } = await supabase.from("special_dates").delete().eq("id", deleteId);
     if (error) {
       alert(`Không thể xóa: ${error.message}`);

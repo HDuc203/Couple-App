@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useTransition, useRef } from "react";
+import { useState, useEffect, useTransition, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Heart, Smile, Send, MessageCircle, Check, Loader2, Sparkles, AlertCircle, Bell, X } from "lucide-react";
@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { Tables } from "@/types/database";
 import type { Profile } from "@/lib/profile";
 import type { PartnerProfile } from "@/lib/couple";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 
 type CoupleMoodSyncProps = {
   profile: Profile;
@@ -138,6 +139,7 @@ export function CoupleMoodSync({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const coupleId = currentCouple?.couple?.id ?? null;
+  const supabase = useMemo(() => createClient(), []);
 
   const [userMood, setUserMood] = useState<Tables<"mood_logs"> | null>(latestMood);
   const [partnerMood, setPartnerMood] = useState<Tables<"mood_logs"> | null>(partnerLatestMood);
@@ -152,51 +154,156 @@ export function CoupleMoodSync({
   const [floatingEmoji, setFloatingEmoji] = useState<string | null>(null);
   const [floatingHearts, setFloatingHearts] = useState<Array<{ id: number; left: number; delay: number }>>([]);
   const heartIdCounter = useRef(0);
+  const channelRef = useRef<RealtimeChannel | null>(null);
 
-  useEffect(() => { setUserMood(latestMood); }, [latestMood]);
-  useEffect(() => { setPartnerMood(partnerLatestMood); }, [partnerLatestMood]);
+  useEffect(() => {
+    // Initial client-side sync to ensure fresh data bypassing caching
+    const syncFreshData = async () => {
+      const { data: ownMood } = await supabase
+        .from("mood_logs")
+        .select("*")
+        .eq("user_id", profile.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (ownMood) {
+        setUserMood((current) => {
+          if (!current) return ownMood;
+          const currentMilli = current.created_at ? new Date(current.created_at).getTime() : 0;
+          const freshMilli = ownMood.created_at ? new Date(ownMood.created_at).getTime() : 0;
+          return freshMilli > currentMilli ? ownMood : current;
+        });
+      }
+
+      if (partnerProfile) {
+        const { data: pMood } = await supabase
+          .from("mood_logs")
+          .select("*")
+          .eq("user_id", partnerProfile.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (pMood) {
+          setPartnerMood((current) => {
+            if (!current) return pMood;
+            const currentMilli = current.created_at ? new Date(current.created_at).getTime() : 0;
+            const freshMilli = pMood.created_at ? new Date(pMood.created_at).getTime() : 0;
+            return freshMilli > currentMilli ? pMood : current;
+          });
+        }
+      }
+    };
+    syncFreshData();
+  }, [profile.id, partnerProfile?.id]);
+
+  useEffect(() => {
+    if (latestMood) {
+      setUserMood((current) => {
+        if (!current) return latestMood;
+        const currentMilli = current.created_at ? new Date(current.created_at).getTime() : 0;
+        const propMilli = latestMood.created_at ? new Date(latestMood.created_at).getTime() : 0;
+        return propMilli > currentMilli ? latestMood : current;
+      });
+    } else {
+      setUserMood(null);
+    }
+  }, [latestMood]);
+
+  useEffect(() => {
+    if (partnerLatestMood) {
+      setPartnerMood((current) => {
+        if (!current) return partnerLatestMood;
+        const currentMilli = current.created_at ? new Date(current.created_at).getTime() : 0;
+        const propMilli = partnerLatestMood.created_at ? new Date(partnerLatestMood.created_at).getTime() : 0;
+        return propMilli > currentMilli ? partnerLatestMood : current;
+      });
+    } else {
+      setPartnerMood(null);
+    }
+  }, [partnerLatestMood]);
+
+  const partnerProfileRef = useRef(partnerProfile);
+  const profileRef = useRef(profile);
+
+  useEffect(() => {
+    partnerProfileRef.current = partnerProfile;
+  }, [partnerProfile]);
+
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
 
   useEffect(() => {
     if (!coupleId) return;
-    const supabase = createClient();
+
     const channel = supabase
       .channel(`couple_sync:${coupleId}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "mood_logs", filter: `couple_id=eq.${coupleId}` },
+      .on("postgres_changes", { event: "*", schema: "public", table: "mood_logs", filter: `couple_id=eq.${coupleId}` },
         async (payload) => {
-          const newMood = payload.new as Tables<"mood_logs">;
-          if (partnerProfile && newMood.user_id === partnerProfile.id) {
-            setPartnerMood(newMood);
-            setPulsePartner(true);
-            const config = getMoodConfig(newMood.mood);
-            setFloatingEmoji(config.emoji);
-            setToast({ show: true, message: `✨ ${partnerProfile.display_name} vừa cập nhật tâm trạng mới: ${config.emoji} ${config.label}`, type: "mood" });
-            if (!config.isNegative) {
-              const hearts = Array.from({ length: 5 }).map(() => ({ id: ++heartIdCounter.current, left: Math.random() * 60 + 20, delay: Math.random() * 0.8 }));
-              setFloatingHearts(hearts);
-              setTimeout(() => setFloatingHearts([]), 3500);
+          console.log('[REALTIME mood event]', payload);
+          const partnerProfileVal = partnerProfileRef.current;
+          const profileVal = profileRef.current;
+
+          if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
+            const newMood = payload.new as Tables<"mood_logs">;
+            if (partnerProfileVal && newMood.user_id === partnerProfileVal.id) {
+              setPartnerMood(newMood);
+              setPulsePartner(true);
+              const config = getMoodConfig(newMood.mood);
+              setFloatingEmoji(config.emoji);
+              setToast({ show: true, message: `✨ ${partnerProfileVal.display_name} vừa cập nhật tâm trạng mới: ${config.emoji} ${config.label}`, type: "mood" });
+              if (!config.isNegative) {
+                const hearts = Array.from({ length: 5 }).map(() => ({ id: ++heartIdCounter.current, left: Math.random() * 60 + 20, delay: Math.random() * 0.8 }));
+                setFloatingHearts(hearts);
+                setTimeout(() => setFloatingHearts([]), 3500);
+              }
+              setTimeout(() => setPulsePartner(false), 2500);
+              setTimeout(() => setFloatingEmoji(null), 3000);
+              setTimeout(() => setToast(null), 4500);
+            } else if (newMood.user_id === profileVal.id) {
+              setUserMood(newMood);
             }
-            setTimeout(() => setPulsePartner(false), 2500);
-            setTimeout(() => setFloatingEmoji(null), 3000);
-            setTimeout(() => setToast(null), 4500);
-          } else if (newMood.user_id === profile.id) {
-            setUserMood(newMood);
+          } else if (payload.eventType === "DELETE") {
+            const oldMood = payload.old as { id: string };
+            setUserMood((current) => (current && oldMood.id === current.id ? null : current));
+            setPartnerMood((current) => (current && oldMood.id === current.id ? null : current));
+          }
+
+          // Chỉ refresh để đồng bộ khi chính mình cập nhật mood (partner cập nhật đã có realtime xử lý ngay)
+          const newMood = payload.new as Tables<"mood_logs"> | undefined;
+          if (newMood?.user_id === profileVal.id) {
+            startTransition(() => {
+              router.refresh();
+            });
           }
         }
       )
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "love_notes", filter: `couple_id=eq.${coupleId}` },
         async (payload) => {
           const newNote = payload.new as Tables<"love_notes">;
-          if (partnerProfile && newNote.sender_id === partnerProfile.id && newNote.receiver_id === profile.id) {
+          const partnerProfileVal = partnerProfileRef.current;
+          const profileVal = profileRef.current;
+
+          if (partnerProfileVal && newNote.sender_id === partnerProfileVal.id && newNote.receiver_id === profileVal.id) {
             setToast({ show: true, message: newNote.message, type: "reaction" });
             setPulsePartner(true);
             setTimeout(() => setPulsePartner(false), 2000);
             setTimeout(() => setToast(null), 5000);
+            startTransition(() => {
+              router.refresh();
+            });
           }
         }
       )
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [coupleId, partnerProfile?.id, profile.id]);
+      .subscribe((status) => {
+        console.log('[REALTIME status]', status);
+      });
+    channelRef.current = channel;
+    return () => {
+      console.log('[REALTIME] Cleaning up channel couple_sync:' + coupleId + ':debug');
+      supabase.removeChannel(channel);
+    };
+  }, [coupleId, supabase]);
 
   const handleSelectMood = (moodLabel: string) => {
     setSelectedMoodLabel(moodLabel);
@@ -206,7 +313,6 @@ export function CoupleMoodSync({
   const handleSaveMood = async () => {
     if (!selectedMoodLabel) return;
     setSaveStatus("saving");
-    const supabase = createClient();
     const { error } = await supabase.from("mood_logs").insert({
       user_id: profile.id,
       couple_id: coupleId,
@@ -228,7 +334,6 @@ export function CoupleMoodSync({
   const handleReaction = async (type: "hug" | "care" | "chat") => {
     if (!coupleId || !partnerProfile) return;
     setReactionSuccess(type);
-    const supabase = createClient();
     let message = "";
     const partnerConfig = getMoodConfig(partnerMood?.mood ?? null);
     const partnerMoodDisplay = `${partnerConfig.emoji} ${partnerConfig.label}`;
