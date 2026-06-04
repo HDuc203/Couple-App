@@ -1,6 +1,6 @@
 import { AppShell } from "@/components/layout/AppShell";
 import { SettingsView } from "@/components/settings/SettingsView";
-import { getCurrentCouple } from "@/lib/couple";
+import { getCurrentCouple, getPartnerProfile } from "@/lib/couple";
 import { requireOnboardedProfile } from "@/lib/onboarding";
 import { Suspense } from "react";
 
@@ -13,6 +13,7 @@ type PageProps = {
 export default async function SettingsPage({ searchParams }: PageProps) {
   const { user, profile } = await requireOnboardedProfile();
   const currentCouple = await getCurrentCouple(user.id);
+  const partner = currentCouple ? await getPartnerProfile(user.id, currentCouple.couple.id) : null;
 
   return (
     <AppShell active="settings" profile={profile}>
@@ -24,6 +25,7 @@ export default async function SettingsPage({ searchParams }: PageProps) {
         <SettingsView
           profile={profile}
           currentCouple={currentCouple}
+          partner={partner}
         />
       </Suspense>
     </AppShell>
