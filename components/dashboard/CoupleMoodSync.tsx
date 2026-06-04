@@ -218,7 +218,7 @@ export function CoupleMoodSync({
       setTimeout(() => setSaveStatus("idle"), 3000);
     } else {
       setSaveStatus("success");
-      const { data: newestUserMood } = await supabase.from("mood_logs").select("*").eq("user_id", profile.id).order("created_at", { ascending: false }).limit(1).single();
+      const { data: newestUserMood } = await supabase.from("mood_logs").select("*").eq("user_id", profile.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
       if (newestUserMood) setUserMood(newestUserMood);
       setTimeout(() => { setSaveStatus("idle"); setShowNoteInput(false); setNote(""); setSelectedMoodLabel(""); }, 1200);
       startTransition(() => router.refresh());

@@ -2,6 +2,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { LoveSpace } from "@/components/love/LoveSpace";
 import { getCurrentCouple, getPartnerProfile } from "@/lib/couple";
 import { requireOnboardedProfile } from "@/lib/onboarding";
+import type { Tables } from "@/types/database";
 
 export const dynamic = "force-dynamic";
 
@@ -11,8 +12,8 @@ export default async function LovePage() {
 
   let partnerProfile = null;
   let partnerLatestMood = null;
-  let loveNotes: any[] = [];
-  let initialReactions: any[] = [];
+  let loveNotes: Tables<"love_notes">[] = [];
+  let initialReactions: Tables<"love_note_reactions">[] = [];
 
   if (currentCouple) {
     try {
@@ -47,7 +48,7 @@ export default async function LovePage() {
 
       // Fetch reactions for all love notes of this couple
       if (loveNotes.length > 0) {
-        const noteIds = loveNotes.map((n: any) => n.id);
+        const noteIds = loveNotes.map((n) => n.id);
         const reactionsResult = await supabase
           .from("love_note_reactions")
           .select("*")

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Bell, X, Calendar, Cake, Droplet, Heart, Sparkles,
   MessageSquare, HeartHandshake, Image as ImageIcon, Check, Trash2, EyeOff
@@ -53,7 +53,8 @@ export function NotificationCenter({ profile }: NotificationCenterProps) {
   const [showToast, setShowToast]         = useState(false);
   const [latestToast, setLatestToast]     = useState<Tables<"notifications"> | null>(null);
 
-  const supabase = createClient();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const supabase = useMemo(() => createClient(), []);
 
   // ─── 1. KHỞI TẠO: purge cũ + fetch activities + fetch dismissed ─────────
   useEffect(() => {
@@ -142,7 +143,7 @@ export function NotificationCenter({ profile }: NotificationCenterProps) {
     try {
       // Lấy couple info
       const { data: memberData } = await supabase
-        .from("couple_members").select("couple_id").eq("user_id", profile.id).single();
+        .from("couple_members").select("couple_id").eq("user_id", profile.id).maybeSingle();
       if (!memberData?.couple_id) return;
       const coupleId = memberData.couple_id as string;
 
@@ -152,13 +153,13 @@ export function NotificationCenter({ profile }: NotificationCenterProps) {
       const partnerId = partnerMembers?.[0]?.user_id;
       let partnerProfile: Profile | null = null;
       if (partnerId) {
-        const { data } = await supabase.from("profiles").select("*").eq("id", partnerId).single();
+        const { data } = await supabase.from("profiles").select("*").eq("id", partnerId).maybeSingle();
         partnerProfile = data;
       }
 
       // Lấy couple data
       const { data: coupleData } = await supabase
-        .from("couples").select("love_start_date").eq("id", coupleId).single();
+        .from("couples").select("love_start_date").eq("id", coupleId).maybeSingle();
 
       // Lấy special dates của cặp đôi
       const { data: specDates } = await supabase
@@ -493,7 +494,7 @@ export function NotificationCenter({ profile }: NotificationCenterProps) {
   };
 
   const visibleReminders = reminders.filter((r) => r.type !== "bucket_list" || r.reminderKey !== "bucket_suggestion" || reminders.length === 0);
-  const badgeCount = unreadCount + reminders.length;
+  const badgeCount = unreadCount + visibleReminders.length;
 
   return (
     <>
@@ -577,14 +578,14 @@ export function NotificationCenter({ profile }: NotificationCenterProps) {
                       Tự động cập nhật theo ngày · Bỏ qua hôm nay sẽ tái hiện ngày mai
                     </p>
 
-                    {reminders.length === 0 ? (
+                    {visibleReminders.length === 0 ? (
                       <div className="flex flex-col items-center justify-center py-20 text-center text-[var(--color-muted)]">
                         <Heart className="h-10 w-10 text-[var(--color-primary-soft)] animate-pulse mb-3" />
                         <p className="text-xs font-bold">Không gian bình yên ✨</p>
                         <p className="mt-1 text-[10px] max-w-[200px]">Không có sự kiện nào trong 7 ngày tới. Tận hưởng khoảnh khắc bên nhau nhé!</p>
                       </div>
                     ) : (
-                      reminders.map((r) => {
+                      visibleReminders.map((r) => {
                         const IconComp = r.icon;
                         return (
                           <div

@@ -2,6 +2,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { requireOnboardedProfile } from "@/lib/onboarding";
 import { getCurrentCouple, getPartnerProfile } from "@/lib/couple";
 import { RelationshipCalendar } from "@/components/calendar/RelationshipCalendar";
+import type { Tables } from "@/types/database";
 
 export const dynamic = "force-dynamic";
 
@@ -10,12 +11,12 @@ export default async function CalendarPage() {
   const currentCouple = await getCurrentCouple(user.id);
 
   let partnerProfile = null;
-  let specialDates: any[] = [];
-  let periodLogs: any[] = [];
-  let timelineItems: any[] = [];
-  let bucketItems: any[] = [];
-  let journalEntries: any[] = [];
-  let photos: any[] = [];
+  let specialDates: Tables<"special_dates">[] = [];
+  let periodLogs: Tables<"period_tracking">[] = [];
+  let timelineItems: Tables<"relationship_timeline">[] = [];
+  let bucketItems: Tables<"bucket_list">[] = [];
+  let journalEntries: Tables<"diary_entries">[] = [];
+  let photos: Tables<"photos">[] = [];
   const queryErrors: string[] = [];
 
   // Fetch current user's period tracking data

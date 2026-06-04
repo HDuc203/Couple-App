@@ -2,6 +2,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { requireOnboardedProfile } from "@/lib/onboarding";
 import { getCurrentCouple, getPartnerProfile } from "@/lib/couple";
 import { FutureSpace } from "@/components/future/FutureSpace";
+import type { Tables } from "@/types/database";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +11,7 @@ export default async function FuturePage() {
   const currentCouple = await getCurrentCouple(user.id);
 
   let partnerProfile = null;
-  let bucketItems: any[] = [];
+  let bucketItems: Tables<"bucket_list">[] = [];
   const queryErrors: string[] = [];
 
   if (currentCouple) {

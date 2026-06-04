@@ -2,6 +2,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { requireOnboardedProfile } from "@/lib/onboarding";
 import { getCurrentCouple, getPartnerProfile } from "@/lib/couple";
 import { JournalSpace } from "@/components/journal/JournalSpace";
+import type { Tables } from "@/types/database";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +11,7 @@ export default async function JournalPage() {
   const currentCouple = await getCurrentCouple(user.id);
 
   let partnerProfile = null;
-  let journalEntries: any[] = [];
+  let journalEntries: Tables<"diary_entries">[] = [];
   const queryErrors: string[] = [];
 
   if (currentCouple) {

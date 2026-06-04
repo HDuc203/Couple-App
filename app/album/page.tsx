@@ -2,6 +2,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { requireOnboardedProfile } from "@/lib/onboarding";
 import { getCurrentCouple, getPartnerProfile } from "@/lib/couple";
 import { AlbumSpace } from "@/components/album/AlbumSpace";
+import type { Tables } from "@/types/database";
 
 export const dynamic = "force-dynamic";
 
@@ -10,8 +11,8 @@ export default async function AlbumPage() {
   const currentCouple = await getCurrentCouple(user.id);
 
   let partnerProfile = null;
-  let albums: any[] = [];
-  let photos: any[] = [];
+  let albums: Tables<"photo_albums">[] = [];
+  let photos: Tables<"photos">[] = [];
   const queryErrors: string[] = [];
 
   if (currentCouple) {
