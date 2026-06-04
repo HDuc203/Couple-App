@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { createCoupleAction, joinCoupleAction, disconnectCoupleAction, updateLoveStartDateAction } from "@/app/settings/actions";
 import {
   Bell,
   Camera,
@@ -659,7 +660,23 @@ function SettingsInner({
   currentCouple: CurrentCouple | null;
 }) {
   const { theme } = useTheme();
-  const [activeTab, setActiveTab] = useState<TabId>("profile");
+  const searchParams = useSearchParams();
+  const errorMsg = searchParams.get("error");
+  const successMsg = searchParams.get("message");
+  const tabParam = searchParams.get("tab") as TabId | null;
+
+  const [activeTab, setActiveTab] = useState<TabId>(() => {
+    if (tabParam && ["profile", "couple", "appearance", "notifications", "privacy"].includes(tabParam)) {
+      return tabParam;
+    }
+    return "profile";
+  });
+
+  useEffect(() => {
+    if (tabParam && ["profile", "couple", "appearance", "notifications", "privacy"].includes(tabParam)) {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
 
   return (
     <div className="space-y-8">
@@ -729,6 +746,18 @@ function SettingsInner({
               WebkitBackdropFilter: "blur(24px)",
             }}
           >
+            {errorMsg && (
+              <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-xs font-bold text-red-800 animate-slide-down">
+                {errorMsg}
+              </div>
+            )}
+
+            {successMsg && (
+              <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-xs font-bold text-emerald-800 animate-slide-down">
+                {successMsg}
+              </div>
+            )}
+
             {activeTab === "profile"       && <ProfileSection profile={profile} />}
             {activeTab === "couple"        && <CoupleSection currentCouple={currentCouple} />}
             {activeTab === "appearance"    && <AppearanceSection />}
@@ -994,6 +1023,7 @@ function ProfileSection({ profile }: { profile: Profile }) {
 
 function CoupleSection({ currentCouple }: { currentCouple: CurrentCouple | null }) {
   const [copied, setCopied] = useState(false);
+  const [activeAction, setActiveAction] = useState<"create" | "join" | null>(null);
 
   const handleCopy = () => {
     if (currentCouple) {
@@ -1023,18 +1053,19 @@ function CoupleSection({ currentCouple }: { currentCouple: CurrentCouple | null 
               </div>
               <h3 className="text-2xl font-black flex items-center gap-2">
                 <Heart className="h-6 w-6 fill-white text-white animate-pulse" />
-                Connected with Mèo Con
+                Đã kết đôi thành công
               </h3>
-              <p className="mt-2 text-lg font-medium text-white/90">Together for 428 days</p>
+              <p className="mt-2 text-lg font-medium text-white/90">Hai bạn đang chia sẻ một không gian chung</p>
             </div>
           </div>
 
           <div className="grid gap-6 md:grid-cols-2">
             <div className="rounded-[2rem] bg-[var(--color-surface)] p-6 ring-1 ring-[var(--color-border)]">
-              <h4 className="mb-4 text-sm font-black uppercase tracking-wider text-[var(--color-faint)]">Danh xưng</h4>
+              <h4 className="mb-4 text-sm font-black uppercase tracking-wider text-[var(--color-faint)]">Trạng thái</h4>
               <div className="space-y-4">
-                <Field label="Bạn gọi người ấy là" defaultValue="Mèo Con 🐱" />
-                <Field label="Người ấy gọi bạn là" defaultValue="Cún Bự 🐶" />
+                <div className="rounded-xl bg-[var(--color-soft)] p-4 text-sm font-bold text-[var(--color-text)]">
+                  Đã ghép đôi thành công! Cùng nhau khám phá nhật ký, album ảnh và các tính năng thú vị nhé.
+                </div>
               </div>
             </div>
 
@@ -1049,7 +1080,7 @@ function CoupleSection({ currentCouple }: { currentCouple: CurrentCouple | null 
               </div>
               <button
                 onClick={handleCopy}
-                className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-[var(--color-primary)] py-3 text-sm font-black text-white transition hover:bg-[var(--color-primary-hover)] active:scale-95"
+                className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-[var(--color-primary)] py-3 text-sm font-black text-white transition hover:bg-[var(--color-primary-hover)] active:scale-95 cursor-pointer"
               >
                 {copied ? <CheckCircle2 className="h-5 w-5" /> : <Copy className="h-5 w-5" />}
                 {copied ? "Đã copy mã" : "Copy mã chia sẻ"}
@@ -1057,15 +1088,105 @@ function CoupleSection({ currentCouple }: { currentCouple: CurrentCouple | null 
             </div>
           </div>
 
-          <div className="flex justify-between items-center pt-6 border-t border-[var(--color-border)]">
-            <div className="text-sm">
-              <p className="font-bold text-[var(--color-text)]">Ngày yêu nhau</p>
-              <p className="text-[var(--color-muted)]">{currentCouple.couple.love_start_date || "Chưa thiết lập"}</p>
-            </div>
-            <button className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold text-red-500 hover:bg-red-50 transition">
-              <Unlink className="h-4 w-4" /> Hủy kết nối
-            </button>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pt-6 border-t border-[var(--color-border)]">
+            <form action={updateLoveStartDateAction} className="flex items-center gap-4">
+              <div className="text-sm">
+                <p className="font-bold text-[var(--color-text)]">Ngày yêu nhau</p>
+                <input
+                  type="date"
+                  name="love_start_date"
+                  defaultValue={currentCouple.couple.love_start_date || ""}
+                  className="mt-1 h-10 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-xs font-bold text-[var(--color-text)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                />
+              </div>
+              <button
+                type="submit"
+                className="mt-6 rounded-xl bg-[var(--color-soft)] px-4 py-2 text-xs font-black text-[var(--color-primary)] hover:bg-[var(--color-soft-strong)] transition cursor-pointer"
+              >
+                Lưu ngày
+              </button>
+            </form>
+            <form action={disconnectCoupleAction}>
+              <button
+                type="submit"
+                className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold text-red-500 hover:bg-red-50 transition cursor-pointer"
+              >
+                <Unlink className="h-4 w-4" /> Hủy kết nối
+              </button>
+            </form>
           </div>
+        </div>
+      ) : activeAction === "create" ? (
+        <div className="flex flex-col items-center justify-center rounded-[2rem] border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] py-12 px-6 text-center animate-in fade-in zoom-in-95 duration-300">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-soft)]">
+            <Heart className="h-8 w-8 text-[var(--color-primary)] animate-pulse" />
+          </div>
+          <h3 className="mt-4 text-xl font-black text-[var(--color-text)]">Tạo mã kết nối mới</h3>
+          <p className="mt-2 max-w-sm text-sm text-[var(--color-muted)]">
+            Ứng dụng sẽ tạo một mã kết nối ngẫu nhiên gồm 8 ký tự. Bạn có thể gửi mã này cho người ấy để kết nối.
+          </p>
+          <form action={createCoupleAction} className="mt-6 w-full max-w-sm space-y-4">
+            <Field
+              label="Ngày bắt đầu yêu (tùy chọn)"
+              name="love_start_date"
+              type="date"
+              icon={Calendar}
+            />
+            <div className="flex gap-4 justify-center pt-2">
+              <button
+                type="submit"
+                className="rounded-2xl bg-[var(--color-primary)] px-6 py-3.5 text-sm font-black text-white shadow-lg transition hover:bg-[var(--color-primary-hover)] active:scale-95 cursor-pointer"
+              >
+                Tạo mã của tôi
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveAction(null)}
+                className="rounded-2xl bg-[var(--color-soft)] px-6 py-3.5 text-sm font-black text-[var(--color-text)] transition hover:bg-[var(--color-soft-strong)] active:scale-95 cursor-pointer"
+              >
+                Hủy
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : activeAction === "join" ? (
+        <div className="flex flex-col items-center justify-center rounded-[2rem] border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] py-12 px-6 text-center animate-in fade-in zoom-in-95 duration-300">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-soft)]">
+            <Users className="h-8 w-8 text-[var(--color-primary)]" />
+          </div>
+          <h3 className="mt-4 text-xl font-black text-[var(--color-text)]">Nhập mã mời của người ấy</h3>
+          <p className="mt-2 max-w-sm text-sm text-[var(--color-muted)]">
+            Nhập mã gồm 8 ký tự mà người ấy gửi cho bạn để bắt đầu không gian chung của hai người.
+          </p>
+          <form action={joinCoupleAction} className="mt-6 w-full max-w-sm space-y-4">
+            <div className="space-y-2 text-left">
+              <label className="flex items-center gap-2 text-sm font-bold text-[var(--color-muted)]">
+                Mã mời (invite code)
+              </label>
+              <input
+                required
+                name="invite_code"
+                placeholder="AB3X9K2M"
+                maxLength={8}
+                className="h-[3.25rem] w-full rounded-2xl border-none bg-[var(--color-surface)] px-4 font-black text-center text-xl tracking-[0.2em] text-[var(--color-primary)] outline-none ring-1 ring-[var(--color-border)] transition focus:ring-2 focus:ring-[var(--color-primary)] uppercase"
+              />
+            </div>
+            <div className="flex gap-4 justify-center pt-2">
+              <button
+                type="submit"
+                className="rounded-2xl bg-[var(--color-primary)] px-6 py-3.5 text-sm font-black text-white shadow-lg transition hover:bg-[var(--color-primary-hover)] active:scale-95 cursor-pointer"
+              >
+                Kết nối ngay
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveAction(null)}
+                className="rounded-2xl bg-[var(--color-soft)] px-6 py-3.5 text-sm font-black text-[var(--color-text)] transition hover:bg-[var(--color-soft-strong)] active:scale-95 cursor-pointer"
+              >
+                Hủy
+              </button>
+            </div>
+          </form>
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center rounded-[2rem] border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] py-16 text-center">
@@ -1077,10 +1198,16 @@ function CoupleSection({ currentCouple }: { currentCouple: CurrentCouple | null 
             Tạo mã để mời người ấy hoặc nhập mã người ấy gửi để bắt đầu không gian chung.
           </p>
           <div className="mt-8 flex flex-col gap-4 sm:flex-row">
-            <button className="rounded-2xl bg-[var(--color-primary)] px-8 py-3.5 text-sm font-black text-white shadow-lg transition hover:bg-[var(--color-primary-hover)] hover:shadow-xl active:scale-95">
+            <button
+              onClick={() => setActiveAction("create")}
+              className="rounded-2xl bg-[var(--color-primary)] px-8 py-3.5 text-sm font-black text-white shadow-lg transition hover:bg-[var(--color-primary-hover)] hover:shadow-xl active:scale-95 cursor-pointer"
+            >
               Tạo mã kết nối
             </button>
-            <button className="rounded-2xl bg-[var(--color-soft)] px-8 py-3.5 text-sm font-black text-[var(--color-primary)] transition hover:bg-[var(--color-soft-strong)] active:scale-95">
+            <button
+              onClick={() => setActiveAction("join")}
+              className="rounded-2xl bg-[var(--color-soft)] px-8 py-3.5 text-sm font-black text-[var(--color-primary)] transition hover:bg-[var(--color-soft-strong)] active:scale-95 cursor-pointer"
+            >
               Nhập mã mời
             </button>
           </div>

@@ -2,6 +2,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { SettingsView } from "@/components/settings/SettingsView";
 import { getCurrentCouple } from "@/lib/couple";
 import { requireOnboardedProfile } from "@/lib/onboarding";
+import { Suspense } from "react";
 
 export const dynamic = "force-dynamic";
 
@@ -15,10 +16,16 @@ export default async function SettingsPage({ searchParams }: PageProps) {
 
   return (
     <AppShell active="settings" profile={profile}>
-      <SettingsView
-        profile={profile}
-        currentCouple={currentCouple}
-      />
+      <Suspense fallback={
+        <div className="flex h-48 items-center justify-center text-[var(--color-muted)]">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-[var(--color-primary)] border-t-transparent" />
+        </div>
+      }>
+        <SettingsView
+          profile={profile}
+          currentCouple={currentCouple}
+        />
+      </Suspense>
     </AppShell>
   );
 }

@@ -19,8 +19,9 @@ function optionalString(formData: FormData, key: string) {
   return value.length > 0 ? value : null;
 }
 
-function redirectToSettings(type: "error" | "message", message: string): never {
+function redirectToSettings(type: "error" | "message", message: string, tab: string = "couple"): never {
   const params = new URLSearchParams({
+    tab,
     [type]: message,
   });
   redirect(`/settings?${params.toString()}`);
@@ -54,12 +55,12 @@ export async function updateProfileAction(formData: FormData) {
   });
 
   if (error) {
-    redirectToSettings("error", `Không thể lưu hồ sơ: ${error.message}`);
+    redirectToSettings("error", `Không thể lưu hồ sơ: ${error.message}`, "profile");
   }
 
   revalidatePath("/settings");
   revalidatePath("/dashboard");
-  redirectToSettings("message", "Đã lưu hồ sơ.");
+  redirectToSettings("message", "Đã lưu hồ sơ.", "profile");
 }
 
 export async function createCoupleAction(formData: FormData) {
