@@ -12,7 +12,7 @@ const out = fs.openSync(outPath, "a");
 const err = fs.openSync(errPath, "a");
 
 const child = spawn(process.execPath, [nextBin, "dev", "--hostname", "127.0.0.1"], {
-  cwd: root,
+  cwd: path.join(root, "frontend"),
   env: {
     ...process.env,
     FORCE_COLOR: "0",
