@@ -583,6 +583,10 @@ export type Database = {
 
     Views: Record<string, never>;
     Functions: {
+      delete_user_account: {
+        Args: Record<PropertyKey, never>;
+        Returns: undefined;
+      };
       join_couple_by_invite_code: {
         Args: {
           invite_code_input: string;

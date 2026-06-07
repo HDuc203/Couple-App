@@ -23,6 +23,7 @@ import {
   VenusAndMars,
   Loader2,
   Droplet,
+  AlertTriangle,
 } from "lucide-react";
 import { useTheme } from "@/components/ThemeProvider";
 import { createClient } from "@/lib/supabase/client";
@@ -1889,7 +1890,13 @@ function NotificationsSection() {
 function PrivacySection({ profile }: { profile: Profile }) {
   const [sharePeriod, setSharePeriod] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  
   const supabase = createClient();
+  const router = useRouter();
 
   useEffect(() => {
     async function loadPrivacySettings() {
@@ -1931,6 +1938,26 @@ function PrivacySection({ profile }: { profile: Profile }) {
           notifications_enabled: true,
           share_with_partner: checked,
         });
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmText !== "XÓA TÀI KHOẢN") return;
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      const { error: rpcError } = await supabase.rpc("delete_user_account");
+      if (rpcError) {
+        throw new Error(rpcError.message || "Không thể xóa tài khoản. Vui lòng thử lại sau.");
+      }
+
+      // Đăng xuất và điều hướng
+      await supabase.auth.signOut();
+      window.location.href = "/login";
+    } catch (err: any) {
+      console.error("Lỗi khi xóa tài khoản:", err);
+      setDeleteError(err.message || "Đã xảy ra lỗi trong quá trình xóa tài khoản.");
+      setIsDeleting(false);
     }
   };
 
@@ -1982,6 +2009,84 @@ function PrivacySection({ profile }: { profile: Profile }) {
           defaultOn={true} 
           disabled={true}
         />
+      </div>
+
+      {/* Danger Zone / Khu vực nguy hiểm */}
+      <div className="mt-8 pt-8 border-t border-[var(--color-border)]">
+        <div className="rounded-[2.5rem] border border-red-500/20 bg-red-500/5 p-6 md:p-8">
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-red-500/10 text-red-500">
+              <AlertTriangle className="h-6 w-6" />
+            </div>
+            <div className="flex-1 space-y-4">
+              <div>
+                <h3 className="text-lg font-bold text-red-500">Khu vực nguy hiểm</h3>
+                <p className="mt-1 text-sm font-medium text-[var(--color-muted)] leading-relaxed">
+                  Một khi bạn xóa tài khoản, tất cả thông tin của bạn và đối phương (kỷ niệm, nhật ký, ảnh chung, dữ liệu cá nhân) sẽ bị xóa vĩnh viễn khỏi hệ thống và không thể khôi phục lại.
+                </p>
+              </div>
+
+              {!showDeleteConfirm ? (
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="rounded-2xl bg-red-500/10 hover:bg-red-500/20 px-5 py-3 text-sm font-bold text-red-500 transition-colors cursor-pointer"
+                >
+                  Xóa tài khoản của tôi
+                </button>
+              ) : (
+                <div className="space-y-4 rounded-2xl bg-[var(--color-surface)] p-5 ring-1 ring-[var(--color-border)] animate-in fade-in slide-in-from-top-2 duration-300">
+                  <p className="text-sm font-bold text-[var(--color-text)]">
+                    Để xác nhận, vui lòng nhập chính xác cụm từ <span className="text-red-500 font-extrabold font-mono">XÓA TÀI KHOẢN</span> vào ô bên dưới:
+                  </p>
+                  
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <input
+                      type="text"
+                      placeholder="XÓA TÀI KHOẢN"
+                      value={deleteConfirmText}
+                      onChange={(e) => setDeleteConfirmText(e.target.value)}
+                      disabled={isDeleting}
+                      className="h-12 flex-1 rounded-xl bg-[var(--color-surface)] px-4 font-semibold text-[var(--color-text)] outline-none ring-1 ring-[var(--color-border)] focus:ring-2 focus:ring-red-500 disabled:opacity-60"
+                    />
+                    
+                    <button
+                      onClick={handleDeleteAccount}
+                      disabled={deleteConfirmText !== "XÓA TÀI KHOẢN" || isDeleting}
+                      className="h-12 rounded-xl bg-red-500 text-white font-bold px-6 hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      {isDeleting ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Đang xóa...
+                        </>
+                      ) : (
+                        "Xác nhận xóa vĩnh viễn"
+                      )}
+                    </button>
+                    
+                    <button
+                      onClick={() => {
+                        setShowDeleteConfirm(false);
+                        setDeleteConfirmText("");
+                        setDeleteError(null);
+                      }}
+                      disabled={isDeleting}
+                      className="h-12 rounded-xl bg-[var(--color-soft)] text-[var(--color-text)] font-bold px-4 hover:bg-[var(--color-border)] disabled:opacity-50 transition-colors cursor-pointer"
+                    >
+                      Hủy bỏ
+                    </button>
+                  </div>
+                  
+                  {deleteError && (
+                    <p className="text-xs font-bold text-red-500 animate-in fade-in duration-200">
+                      {deleteError}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

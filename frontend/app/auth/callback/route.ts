@@ -1,0 +1,32 @@
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+import { ensureProfileForUser } from "@/lib/profile";
+
+export async function GET(request: Request) {
+  const { searchParams, origin } = new URL(request.url);
+  const code = searchParams.get("code");
+  const next = searchParams.get("next") ?? "/dashboard";
+
+  if (code) {
+    const supabase = await createClient();
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    
+    if (!error) {
+      // Ensure profile exists for the user authenticated via Google
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const fullName = user.user_metadata?.full_name || user.user_metadata?.name;
+          await ensureProfileForUser(supabase, user, fullName);
+        }
+      } catch (profileError) {
+        console.error("Profile creation error on OAuth callback:", profileError);
+      }
+
+      return NextResponse.redirect(`${origin}${next}`);
+    }
+  }
+
+  // Redirect to login page with error message if verification fails
+  return NextResponse.redirect(`${origin}/login?error=Đăng nhập mạng xã hội thất bại.`);
+}

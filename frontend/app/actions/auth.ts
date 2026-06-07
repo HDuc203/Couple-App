@@ -137,3 +137,54 @@ export async function logoutAction() {
   await supabase.auth.signOut();
   redirect("/login");
 }
+
+export async function forgotPasswordAction(email: string) {
+  if (!email || !email.trim()) {
+    return { success: false, error: "Vui lòng nhập email." };
+  }
+
+  const origin = (await headers()).get("origin") || process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+  const redirectTo = `${origin}/auth/confirm?next=/reset-password`;
+
+  const supabase = await createClient();
+  const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+    redirectTo,
+  });
+
+  if (error) {
+    return { success: false, error: authErrorMessage(error.message) };
+  }
+
+  return {
+    success: true,
+    message: "Liên kết khôi phục đã được gửi về email của bạn. Vui lòng kiểm tra hộp thư.",
+  };
+}
+
+export async function resetPasswordAction(formData: FormData) {
+  const password = getString(formData, "password");
+  const confirmPassword = getString(formData, "confirm_password");
+
+  if (!password || !confirmPassword) {
+    return { success: false, error: "Vui lòng điền đầy đủ mật khẩu." };
+  }
+
+  if (password !== confirmPassword) {
+    return { success: false, error: "Mật khẩu xác nhận không khớp." };
+  }
+
+  if (password.length < 6) {
+    return { success: false, error: "Mật khẩu phải chứa ít nhất 6 ký tự." };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.auth.updateUser({
+    password,
+  });
+
+  if (error) {
+    return { success: false, error: authErrorMessage(error.message) };
+  }
+
+  return { success: true };
+}
