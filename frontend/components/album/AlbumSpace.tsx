@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useTransition, useMemo, useRef, useCallback } from "react";
+import { uploadToCloudinary, uploadAudioToCloudinary } from "@/lib/cloudinary";
 import { useRouter } from "next/navigation";
 import {
   Images,
@@ -174,6 +175,7 @@ export function AlbumSpace({
   const [photoAlbumId, setPhotoAlbumId] = useState("");
   const [photoError, setPhotoError] = useState("");
   const [isCompressing, setIsCompressing] = useState(false);
+  const [isSavingPhoto, setIsSavingPhoto] = useState(false);
 
   // Custom Confirm Modal state
   const [confirmModal, setConfirmModal] = useState<{
@@ -207,6 +209,132 @@ export function AlbumSpace({
   // Photo detailed view & comments modal state
   const [selectedPhoto, setSelectedPhoto] = useState<Tables<"photos"> | null>(null);
   const [newCommentText, setNewCommentText] = useState("");
+  const [imgAspectRatio, setImgAspectRatio] = useState<number | null>(null);
+  const [slideshowAspectRatios, setSlideshowAspectRatios] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    setImgAspectRatio(null);
+  }, [selectedPhoto]);
+
+  // Playlist management states
+  const [isOpenMusicModal, setIsOpenMusicModal] = useState(false);
+  const [songsList, setSongsList] = useState<any[]>([]);
+  const [searchSongQuery, setSearchSongQuery] = useState("");
+  const [isUploadingSong, setIsUploadingSong] = useState(false);
+  const [selectedSongFile, setSelectedSongFile] = useState<File | null>(null);
+  const [songUploadTitle, setSongUploadTitle] = useState("");
+
+  const fetchSongs = useCallback(async () => {
+    if (!coupleId) return;
+    const { data, error } = await (supabase as any)
+      .from("slideshow_songs")
+      .select("*")
+      .eq("couple_id", coupleId)
+      .order("created_at", { ascending: false });
+
+    if (!error && data) {
+      setSongsList(data);
+    }
+  }, [coupleId, supabase]);
+
+  useEffect(() => {
+    if (isOpenMusicModal) {
+      fetchSongs();
+    }
+  }, [isOpenMusicModal, fetchSongs]);
+
+  useEffect(() => {
+    const dbSongUrl = currentCouple?.couple?.active_song_url;
+    const dbSongTitle = currentCouple?.couple?.active_song_title;
+
+    if (dbSongUrl && dbSongTitle) {
+      setCustomMusicUrl(dbSongUrl);
+      setCustomMusicName(dbSongTitle);
+    } else {
+      const savedUrl = localStorage.getItem("couple_app_slideshow_music_url");
+      const savedName = localStorage.getItem("couple_app_slideshow_music_name");
+      if (savedUrl && savedName) {
+        setCustomMusicUrl(savedUrl);
+        setCustomMusicName(savedName);
+      }
+    }
+  }, [currentCouple]);
+
+  const handleSelectSong = async (title: string, url: string) => {
+    setCustomMusicUrl(url);
+    setCustomMusicName(title);
+    localStorage.setItem("couple_app_slideshow_music_url", url);
+    localStorage.setItem("couple_app_slideshow_music_name", title);
+
+    if (coupleId) {
+      await (supabase as any)
+        .from("couples")
+        .update({
+          active_song_url: url === "/slideshow-music.mp3" ? null : url,
+          active_song_title: url === "/slideshow-music.mp3" ? null : title,
+        })
+        .eq("id", coupleId);
+    }
+  };
+
+  const handleSongUploadSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedSongFile || !songUploadTitle.trim() || !coupleId || !profile?.id) return;
+
+    setIsUploadingSong(true);
+    try {
+      const uploadedUrl = await uploadAudioToCloudinary(selectedSongFile, "slideshow_songs");
+
+      const { data, error } = await (supabase as any)
+        .from("slideshow_songs")
+        .insert({
+          couple_id: coupleId,
+          title: songUploadTitle.trim(),
+          url: uploadedUrl,
+          created_by: profile.id,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        alert(`Lỗi khi lưu bài hát: ${error.message}`);
+      } else {
+        setSelectedSongFile(null);
+        setSongUploadTitle("");
+        fetchSongs();
+        if (data) {
+          handleSelectSong(data.title, data.url);
+        }
+      }
+    } catch (err: any) {
+      alert(`Lỗi khi tải nhạc lên Cloudinary: ${err.message}`);
+    } finally {
+      setIsUploadingSong(false);
+    }
+  };
+
+  const handleDeleteSong = async (songId: string, event: React.MouseEvent) => {
+    event.stopPropagation();
+    if (!confirm("Bạn có chắc chắn muốn xóa bài hát này khỏi danh sách?")) return;
+
+    const { error } = await (supabase as any)
+      .from("slideshow_songs")
+      .delete()
+      .eq("id", songId);
+
+    if (error) {
+      alert(`Lỗi khi xóa bài hát: ${error.message}`);
+    } else {
+      fetchSongs();
+      const songToDelete = songsList.find((s) => s.id === songId);
+      if (songToDelete && customMusicUrl === songToDelete.url) {
+        setCustomMusicUrl("/slideshow-music.mp3");
+        setCustomMusicName("Phép Màu (From Đàn Cá Gỗ)");
+        localStorage.removeItem("couple_app_slideshow_music_url");
+        localStorage.removeItem("couple_app_slideshow_music_name");
+      }
+    }
+  };
 
   // Sync server changes
   useEffect(() => {
@@ -255,7 +383,7 @@ export function AlbumSpace({
           } else if (payload.eventType === "UPDATE") {
             const updatedAlbum = payload.new as Tables<"photo_albums">;
             setAlbums((prev) =>
-              prev.map((item) => (item.id === updatedAlbum.id ? updatedAlbum : item))
+              prev.map((item) => (item.id === updatedAlbum.id ? { ...item, ...updatedAlbum } : item))
             );
           } else if (payload.eventType === "DELETE") {
             const deleted = payload.old as { id: string };
@@ -290,10 +418,10 @@ export function AlbumSpace({
           } else if (payload.eventType === "UPDATE") {
             const updated = payload.new as Tables<"photos">;
             setPhotos((prev) =>
-              prev.map((p) => (p.id === updated.id ? updated : p))
+              prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
             );
-            // Sync detailed photo model if active
-            setSelectedPhoto((current) => current?.id === updated.id ? updated : current);
+            // Sync detailed photo model if active, merging changes to prevent RLS column omissions from wiping out existing fields
+            setSelectedPhoto((current) => current?.id === updated.id ? { ...current, ...updated } : current);
           } else if (payload.eventType === "DELETE") {
             const deleted = payload.old as { id: string };
             setPhotos((prev) => prev.filter((p) => p.id !== deleted.id));
@@ -306,11 +434,67 @@ export function AlbumSpace({
       )
       .subscribe();
 
+    // Subscribe to slideshow songs channel
+    const songsChannel = supabase
+      .channel(`slideshow_songs:${coupleId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "slideshow_songs",
+        },
+        async (payload) => {
+          if (payload.eventType === "INSERT") {
+            const newSong = payload.new as any;
+            setSongsList((prev) => {
+              if (prev.some((s) => s.id === newSong.id)) return prev;
+              return [newSong, ...prev];
+            });
+          } else if (payload.eventType === "UPDATE") {
+            const updated = payload.new as any;
+            setSongsList((prev) =>
+              prev.map((s) => (s.id === updated.id ? { ...s, ...updated } : s))
+            );
+          } else if (payload.eventType === "DELETE") {
+            const deleted = payload.old as { id: string };
+            setSongsList((prev) => prev.filter((s) => s.id !== deleted.id));
+          }
+        }
+      )
+      .subscribe();
+
+    // Subscribe to couples channel to sync the active song selection
+    const coupleChannel = supabase
+      .channel(`couples:${coupleId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "couples",
+          filter: `id=eq.${coupleId}`,
+        },
+        async (payload) => {
+          const updatedCouple = payload.new as any;
+          if (updatedCouple.active_song_url && updatedCouple.active_song_title) {
+            setCustomMusicUrl(updatedCouple.active_song_url);
+            setCustomMusicName(updatedCouple.active_song_title);
+          } else if (updatedCouple.active_song_url === null) {
+            setCustomMusicUrl("/slideshow-music.mp3");
+            setCustomMusicName("Phép Màu (From Đàn Cá Gỗ)");
+          }
+        }
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(albumsChannel);
       supabase.removeChannel(photosChannel);
+      supabase.removeChannel(songsChannel);
+      supabase.removeChannel(coupleChannel);
     };
-  }, [coupleId, supabase]);
+  }, [coupleId, supabase, currentCouple]);
 
   // Create new photo album
   const handleCreateAlbum = async (e: React.FormEvent) => {
@@ -364,50 +548,66 @@ export function AlbumSpace({
       return;
     }
 
-    const targetAlbumId = photoAlbumId || null;
+    setPhotoError("");
+    setIsSavingPhoto(true);
 
-    // Pack caption and comments empty array inside JSON
-    const packedCaption = JSON.stringify({
-      text: photoCaption.trim(),
-      comments: [],
-    });
+    try {
+      let finalPhotoUrl = photoUrl.trim();
 
-    const { error } = await supabase.from("photos").insert({
-      couple_id: coupleId,
-      album_id: targetAlbumId,
-      uploaded_by: profile.id,
-      image_url: photoUrl.trim(),
-      caption: packedCaption,
-      location: photoLocation.trim() || null,
-      taken_at: new Date().toISOString(),
-    });
-
-    if (error) {
-      setPhotoError(`Không thể tải ảnh lên: ${error.message}`);
-    } else {
-      // Gửi thông báo đến partner
-      if (partnerProfile) {
-        const capText = photoCaption.trim() ? photoCaption.trim() : "Một hình ảnh đáng nhớ vừa được lưu giữ.";
-        await supabase.from("notifications").insert({
-          couple_id: coupleId,
-          user_id: partnerProfile.id,
-          sender_id: profile.id,
-          type: "album",
-          title: `${profile.display_name} vừa tải lên một kỷ niệm mới 📸`,
-          content: capText,
-          link: "/album",
-        });
+      // If the selected image is a local base64 string, upload it to Cloudinary first
+      if (finalPhotoUrl.startsWith("data:")) {
+        finalPhotoUrl = await uploadToCloudinary(finalPhotoUrl, "albums");
       }
 
-      setIsOpenPhotoModal(false);
-      setPhotoUrl("");
-      setPhotoCaption("");
-      setPhotoLocation("");
-      setPhotoAlbumId("");
-      setPhotoError("");
-      startTransition(() => {
-        router.refresh();
+      const targetAlbumId = photoAlbumId || null;
+
+      // Pack caption and comments empty array inside JSON
+      const packedCaption = JSON.stringify({
+        text: photoCaption.trim(),
+        comments: [],
       });
+
+      const { error } = await supabase.from("photos").insert({
+        couple_id: coupleId,
+        album_id: targetAlbumId,
+        uploaded_by: profile.id,
+        image_url: finalPhotoUrl,
+        caption: packedCaption,
+        location: photoLocation.trim() || null,
+        taken_at: new Date().toISOString(),
+      });
+
+      if (error) {
+        setPhotoError(`Không thể tải ảnh lên: ${error.message}`);
+      } else {
+        // Gửi thông báo đến partner
+        if (partnerProfile) {
+          const capText = photoCaption.trim() ? photoCaption.trim() : "Một hình ảnh đáng nhớ vừa được lưu giữ.";
+          await supabase.from("notifications").insert({
+            couple_id: coupleId,
+            user_id: partnerProfile.id,
+            sender_id: profile.id,
+            type: "album",
+            title: `${profile.display_name} vừa tải lên một kỷ niệm mới 📸`,
+            content: capText,
+            link: "/album",
+          });
+        }
+
+        setIsOpenPhotoModal(false);
+        setPhotoUrl("");
+        setPhotoCaption("");
+        setPhotoLocation("");
+        setPhotoAlbumId("");
+        setPhotoError("");
+        startTransition(() => {
+          router.refresh();
+        });
+      }
+    } catch (uploadError: any) {
+      setPhotoError(`Lỗi tải ảnh lên Cloudinary: ${uploadError.message}`);
+    } finally {
+      setIsSavingPhoto(false);
     }
   };
 
@@ -660,13 +860,7 @@ export function AlbumSpace({
     else { audioRef.current.pause(); }
   }, [slideshowMusicOn]);
 
-  function handleMusicUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const url = URL.createObjectURL(file);
-    setCustomMusicUrl(url);
-    setCustomMusicName(file.name.replace(/\.mp3$/i, "").slice(0, 40));
-  }
+
 
   // Cleanup on unmount
   useEffect(() => {
@@ -676,9 +870,10 @@ export function AlbumSpace({
     };
   }, []);
 
-  // Body scroll lock + cover notification bell when slideshow active
+  // Body scroll lock + cover notification bell when slideshow or detailed photo is active
   useEffect(() => {
-    if (isOpenSlideshow) {
+    const isOverlayActive = isOpenSlideshow || selectedPhoto !== null;
+    if (isOverlayActive) {
       document.documentElement.style.overflow = 'hidden';
       document.body.style.overflow = 'hidden';
       document.body.classList.add('slideshow-active');
@@ -692,7 +887,24 @@ export function AlbumSpace({
       document.body.style.overflow = '';
       document.body.classList.remove('slideshow-active');
     };
-  }, [isOpenSlideshow]);
+  }, [isOpenSlideshow, selectedPhoto]);
+
+  // Handle Escape key to close overlays
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (isOpenSlideshow) {
+          handleCloseSlideshow();
+        } else if (selectedPhoto !== null) {
+          setSelectedPhoto(null);
+        } else if (isOpenMusicModal) {
+          setIsOpenMusicModal(false);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpenSlideshow, selectedPhoto, isOpenMusicModal, handleCloseSlideshow]);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -804,7 +1016,7 @@ export function AlbumSpace({
                     {/* Visual polaroid paper styling header */}
                     <div className="relative aspect-square w-full rounded-xl overflow-hidden border border-[var(--color-border)]/20 bg-[var(--color-soft)]/20">
                       <img
-                        src={resolveDirectImageUrl(photo.image_url)}
+                        src={resolveDirectImageUrl(photo.image_url) || undefined}
                         alt="Kỷ niệm"
                         loading="lazy"
                         onError={(e) => { e.currentTarget.src = "https://images.unsplash.com/photo-1518199266791-5375a83190b7?q=80&w=600"; }}
@@ -1050,9 +1262,17 @@ export function AlbumSpace({
                 </button>
                 <button
                   type="submit"
-                  className="rounded-full bg-[var(--color-primary)] px-5 py-2 text-xs font-black text-white hover:bg-[var(--color-primary-hover)] transition"
+                  disabled={isSavingPhoto || isCompressing}
+                  className="rounded-full bg-[var(--color-primary)] px-5 py-2 text-xs font-black text-white hover:bg-[var(--color-primary-hover)] transition disabled:opacity-50 flex items-center gap-1.5"
                 >
-                  Thêm vào Hộp ảnh
+                  {isSavingPhoto ? (
+                    <>
+                      <Loader2 className="size-3.5 animate-spin" />
+                      Đang tải lên...
+                    </>
+                  ) : (
+                    "Thêm vào Hộp ảnh"
+                  )}
                 </button>
               </footer>
             </form>
@@ -1062,21 +1282,32 @@ export function AlbumSpace({
 
       {/* MODAL 3: PHOTO DETAILED VIEW & COLLABORATIVE COMMENT STREAM */}
       {selectedPhoto && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-md bg-black/45">
-          <div className="w-full max-w-4xl rounded-3xl border border-[var(--color-border)] bg-[var(--color-card)] overflow-hidden shadow-2xl relative animate-scale-up grid md:grid-cols-[1.3fr_1fr] max-h-[85vh]">
-
-            <button
-              onClick={() => setSelectedPhoto(null)}
-              className="absolute top-4 right-4 z-10 p-1.5 rounded-full bg-black/35 text-white hover:bg-black/50 transition backdrop-blur-sm"
-            >
-              <X className="size-4" />
-            </button>
+        <div 
+          onClick={() => setSelectedPhoto(null)} 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-md bg-black/45"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()} 
+            className="w-full max-w-[95vw] md:w-auto md:max-w-[90vw] lg:max-w-[85vw] rounded-3xl border border-[var(--color-border)] bg-[var(--color-card)] overflow-hidden shadow-2xl relative animate-scale-up flex flex-col md:flex-row md:h-[75vh] max-h-[90vh] md:max-h-[85vh] transition-all duration-300"
+          >
 
             {/* Left side: Photo display */}
-            <div className="bg-black flex items-center justify-center overflow-hidden h-72 md:h-full relative">
+            <div
+              className="bg-black flex items-center justify-center overflow-hidden h-72 md:h-full relative md:w-auto w-full flex-shrink-0 transition-all duration-300"
+              style={{
+                aspectRatio: imgAspectRatio ? `${imgAspectRatio}` : undefined,
+                maxWidth: imgAspectRatio && imgAspectRatio > 1.3 ? "60vw" : "45vw",
+              }}
+            >
               <img
-                src={resolveDirectImageUrl(selectedPhoto.image_url)}
+                src={resolveDirectImageUrl(selectedPhoto.image_url) || undefined}
                 alt="Detailed Memory"
+                onLoad={(e) => {
+                  const { naturalWidth, naturalHeight } = e.currentTarget;
+                  if (naturalWidth && naturalHeight) {
+                    setImgAspectRatio(naturalWidth / naturalHeight);
+                  }
+                }}
                 onError={(e) => { e.currentTarget.src = "https://images.unsplash.com/photo-1518199266791-5375a83190b7?q=80&w=600"; }}
                 className="max-h-full max-w-full object-contain"
               />
@@ -1086,7 +1317,7 @@ export function AlbumSpace({
             </div>
 
             {/* Right side: Comments & details info */}
-            <div className="p-5 sm:p-6 flex flex-col h-full overflow-y-auto max-h-[45vh] md:max-h-none">
+            <div className="p-5 sm:p-6 flex flex-col h-[45vh] md:h-full overflow-hidden w-full md:w-[380px] flex-shrink-0 border-t md:border-t-0 md:border-l border-[var(--color-border)]/40 bg-[var(--color-card)]">
 
               <div className="border-b border-[var(--color-border)]/40 pb-3 mb-3">
                 <span className="text-[10px] font-bold text-[var(--color-faint)] flex items-center gap-1">
@@ -1166,6 +1397,7 @@ export function AlbumSpace({
         const arcR = 72;
         const arcCirc = 2 * Math.PI * arcR;
         const arcOffset = arcCirc * (1 - slideshowProgress / 100);
+        const currentRatio = slideshowAspectRatios[currentPhoto.id];
 
         const getCardStyle = (index: number) => {
           const len = filteredPhotos.length;
@@ -1173,6 +1405,9 @@ export function AlbumSpace({
           if (diff > len / 2) diff -= len;
           if (diff < -len / 2) diff += len;
 
+          const isPortrait = currentRatio ? currentRatio < 0.95 : false;
+
+          let translateX = "0px";
           let translateY = "0px";
           let scale = 1;
           let rotate = "0deg";
@@ -1181,6 +1416,7 @@ export function AlbumSpace({
           let pointerEvents: "auto" | "none" = "none";
 
           if (diff === 0) {
+            translateX = "0px";
             translateY = "0px";
             scale = 1;
             rotate = "0deg";
@@ -1188,33 +1424,53 @@ export function AlbumSpace({
             zIndex = 20;
             pointerEvents = "auto";
           } else if (diff === -1) {
-            translateY = "-55%";
+            if (isPortrait) {
+              translateY = "-55%";
+            } else {
+              translateX = "-55%";
+            }
             scale = 0.78;
             rotate = "-6deg";
             opacity = 0.45;
             zIndex = 10;
             pointerEvents = "auto";
           } else if (diff === 1) {
-            translateY = "55%";
+            if (isPortrait) {
+              translateY = "55%";
+            } else {
+              translateX = "55%";
+            }
             scale = 0.78;
             rotate = "6deg";
             opacity = 0.45;
             zIndex = 10;
             pointerEvents = "auto";
           } else if (diff === -2) {
-            translateY = "-100%";
+            if (isPortrait) {
+              translateY = "-100%";
+            } else {
+              translateX = "-100%";
+            }
             scale = 0.6;
             rotate = "-10deg";
             opacity = 0;
             zIndex = 5;
           } else if (diff === 2) {
-            translateY = "100%";
+            if (isPortrait) {
+              translateY = "100%";
+            } else {
+              translateX = "100%";
+            }
             scale = 0.6;
             rotate = "10deg";
             opacity = 0;
             zIndex = 5;
           } else {
-            translateY = diff < 0 ? "-120%" : "120%";
+            if (isPortrait) {
+              translateY = diff < 0 ? "-120%" : "120%";
+            } else {
+              translateX = diff < 0 ? "-120%" : "120%";
+            }
             scale = 0.5;
             rotate = "0deg";
             opacity = 0;
@@ -1224,7 +1480,7 @@ export function AlbumSpace({
           return {
             position: "absolute" as const,
             inset: 0,
-            transform: `translateY(${translateY}) scale(${scale}) rotate(${rotate})`,
+            transform: `translateX(${translateX}) translateY(${translateY}) scale(${scale}) rotate(${rotate})`,
             opacity,
             zIndex,
             pointerEvents,
@@ -1236,30 +1492,57 @@ export function AlbumSpace({
         return (
           <div
             className="fixed inset-0 z-[9999] flex flex-col select-none"
-            style={{ background: "linear-gradient(135deg,#0f0b2a 0%,#1a0f3a 35%,#12182e 65%,#0a0f20 100%)", overflow: "hidden" }}
+            style={{ background: "linear-gradient(to bottom, #fff5f0 0%, #ffeae4 30%, #ffd4ca 65%, #fff0e5 100%)", overflow: "hidden" }}
           >
-            {/* Starfield */}
-            <div className="absolute inset-0 pointer-events-none overflow-hidden">
+            {/* Mặt mặt trời bình minh tỏa các tia nắng ấm áp góc trên trái */}
+            <div 
+              className="absolute top-0 left-0 w-[450px] h-[450px] pointer-events-none rounded-full z-0"
+              style={{
+                background: "radial-gradient(circle at 0% 0%, rgba(254, 240, 138, 0.45) 0%, rgba(251, 146, 60, 0.2) 50%, transparent 80%)",
+                filter: "blur(24px)",
+                animation: "sunbeamPulse 8s ease-in-out infinite alternate",
+                transformOrigin: "0% 0%",
+              }}
+            />
+            {/* Các tia nắng tỏa rộng ra */}
+            <div 
+              className="absolute top-0 left-0 w-[700px] h-[700px] pointer-events-none opacity-15 z-0"
+              style={{
+                background: "repeating-conic-gradient(from 15deg at 0% 0%, transparent 0deg 12deg, rgba(255, 255, 255, 0.25) 12deg 24deg, transparent 24deg 36deg)",
+                animation: "sunbeamPulse 12s ease-in-out infinite alternate",
+                transformOrigin: "0% 0%",
+              }}
+            />
+
+            {/* Hạt nắng vàng lung linh bay lơ lửng */}
+            <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
               {starParticles.map((s) => (
-                <div key={s.id} className="absolute rounded-full bg-white" style={{
+                <div key={s.id} className="absolute rounded-full bg-amber-300" style={{
                   left: `${s.x}%`, top: `${s.y}%`,
                   width: `${s.size}px`, height: `${s.size}px`,
-                  opacity: 0.1 + (s.id % 6) * 0.05,
+                  opacity: 0.15 + (s.id % 6) * 0.08,
+                  boxShadow: "0 0 6px rgba(251, 191, 36, 0.4)",
                   animation: `starTwinkle ${s.dur}s ${s.delay}s ease-in-out infinite alternate`,
                 }} />
               ))}
             </div>
 
-            {/* Floating hearts */}
-            <div className="absolute inset-0 pointer-events-none overflow-hidden">
+            {/* Cánh hoa hướng dương rung rinh bay trong gió */}
+            <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
               {heartParticles.map((p) => (
                 <div key={p.id} className="absolute bottom-0" style={{
-                  left: `${p.x}%`, fontSize: `${p.size * 0.8}rem`,
-                  color: "rgba(251,113,133,0.28)",
-                  animation: `slideHeartFloat ${p.dur}s ${p.delay}s ease-in infinite`,
-                }}>♡</div>
+                  left: `${p.x}%`, fontSize: `${p.size * 0.85}rem`,
+                  color: "rgba(245,158,11,0.35)",
+                  animation: `slideSunflowerSway ${p.dur}s ${p.delay}s ease-in infinite`,
+                }}>🌻</div>
               ))}
             </div>
+
+            {/* Minh họa cặp đôi 2D cartoon làm nền chính phủ toàn màn hình thơ mộng */}
+            <div 
+              className="absolute inset-0 pointer-events-none opacity-30 bg-cover bg-center bg-no-repeat z-0" 
+              style={{ backgroundImage: "url('/images/romantic_couple_2d_cartoon.png')" }} 
+            />
 
             {/* Flying birds */}
             <div className="absolute inset-0 pointer-events-none overflow-hidden">
@@ -1292,26 +1575,6 @@ export function AlbumSpace({
               ))}
             </div>
 
-            {/* Shooting stars */}
-            <div className="absolute inset-0 pointer-events-none overflow-hidden">
-              {[1, 2, 3].map((id) => (
-                <div
-                  key={`shooting-${id}`}
-                  className="absolute rounded-full bg-gradient-to-l from-white to-transparent"
-                  style={{
-                    top: `${10 + id * 15}%`,
-                    right: `${15 + id * 20}%`,
-                    width: "80px",
-                    height: "2px",
-                    transform: "rotate(-45deg)",
-                    opacity: 0,
-                    animation: `shootingStar ${8 + id * 4}s ${id * 3}s linear infinite`,
-                    boxShadow: "0 0 8px rgba(255,255,255,0.8)",
-                  }}
-                />
-              ))}
-            </div>
-
             {/* PROGRESS BAR — top */}
             <div className="absolute top-0 left-0 right-0 h-[2px] z-30">
               <div style={{
@@ -1326,9 +1589,9 @@ export function AlbumSpace({
             <div className="relative z-30 flex items-center justify-between px-5 pt-4 pb-1 flex-shrink-0">
               <button
                 onClick={handleCloseSlideshow}
-                className="flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-black text-white/80 hover:text-white border border-white/15 bg-white/8 hover:bg-white/18 backdrop-blur-sm transition-all hover:scale-105 active:scale-95"
+                className="flex items-center gap-2 rounded-full px-4 py-2 text-xs font-black text-[#3c2a2f] border border-[#3c2a2f]/15 bg-white/50 backdrop-blur-sm transition-all hover:scale-105 active:scale-95 shadow-sm"
               >
-                <X className="size-3.5" /> Đóng
+                <X className="size-4" /> Đóng
               </button>
 
               {/* Dot indicators */}
@@ -1349,8 +1612,8 @@ export function AlbumSpace({
                     style={{
                       width: i === activeSlideshowIndex ? "1.5rem" : "0.4rem",
                       height: "0.4rem",
-                      background: i === activeSlideshowIndex ? "linear-gradient(90deg,#c084fc,#f9a8d4)" : "rgba(255,255,255,0.25)",
-                      boxShadow: i === activeSlideshowIndex ? "0 0 8px rgba(192,132,252,0.7)" : "none",
+                      background: i === activeSlideshowIndex ? "linear-gradient(90deg,#3c2a2f,#876572)" : "rgba(60,42,47,0.25)",
+                      boxShadow: i === activeSlideshowIndex ? "0 0 8px rgba(60,42,47,0.4)" : "none",
                     }}
                   />
                 ))}
@@ -1358,7 +1621,7 @@ export function AlbumSpace({
 
               <button
                 onClick={() => setSlideshowMusicOn(m => !m)}
-                className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black text-white/70 border border-white/15 bg-white/8 hover:bg-white/18 backdrop-blur-sm transition-all"
+                className="flex items-center justify-center rounded-full w-9 h-9 text-base font-black text-[#3c2a2f] border border-[#3c2a2f]/15 bg-white/50 backdrop-blur-sm transition-all hover:scale-105 active:scale-95 shadow-sm"
               >
                 {slideshowMusicOn ? "🎵" : "🔇"}
               </button>
@@ -1370,89 +1633,137 @@ export function AlbumSpace({
               {/* ─── LEFT 50%: Vinyl Player ─── */}
               <div className="flex flex-col items-center justify-center gap-4 w-1/2 h-full px-6 py-4">
 
-                {/* Vinyl disc */}
-                <div className="relative flex-shrink-0" style={{ width: 190, height: 190 }}>
-                  {/* Orbit rings */}
-                  {[1, 1.38, 1.70].map((scale, ri) => (
-                    <div key={ri} className="absolute rounded-full border border-white/8" style={{
-                      width: 190 * scale, height: 190 * scale,
-                      top: "50%", left: "50%",
-                      transform: `translate(-50%,-50%)`,
-                      animation: ri > 0 ? `orbitPulse ${3.5 + ri * 1.5}s ease-in-out infinite alternate` : "none",
-                    }} />
-                  ))}
-
-                  {/* SVG progress arc */}
-                  <svg width="190" height="190" className="absolute inset-0" style={{ transform: "rotate(-90deg)" }}>
-                    <circle cx="95" cy="95" r={arcR} stroke="rgba(255,255,255,0.07)" strokeWidth="3.5" fill="none" />
-                    <circle cx="95" cy="95" r={arcR}
-                      stroke="url(#vinylArc2)" strokeWidth="3.5" fill="none"
-                      strokeLinecap="round" strokeDasharray={arcCirc}
-                      strokeDashoffset={arcOffset}
-                      style={{ transition: "stroke-dashoffset 0.08s linear" }}
+                {/* Vintage Wooden Radio Player - 2D Cartoon Style */}
+                <div
+                  onClick={() => setIsOpenMusicModal(true)}
+                  className="relative flex-shrink-0 flex items-center justify-center cursor-pointer hover:scale-105 active:scale-95 transition-all duration-300 group"
+                  style={{ width: 220, height: 160 }}
+                  title="Quản lý thư viện nhạc nền"
+                >
+                  {/* Thân máy Radio bằng gỗ 2D dễ thương */}
+                  <div 
+                    className="relative rounded-3xl p-4 border-[4px] border-[#3c2a2f] flex flex-col justify-between"
+                    style={{
+                      width: 200,
+                      height: 135,
+                      backgroundColor: "#f5d0a9",
+                      boxShadow: "8px 8px 0px rgba(60, 42, 47, 0.15)",
+                    }}
+                  >
+                    {/* Tay xách 2D phía trên */}
+                    <div 
+                      className="absolute -top-[12px] left-1/2 -translate-x-1/2 rounded-t-xl border-[4px] border-b-0 border-[#3c2a2f]"
+                      style={{ width: 70, height: 12, backgroundColor: "#d9a066" }}
                     />
-                    <defs>
-                      <linearGradient id="vinylArc2" x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" stopColor="#c084fc" />
-                        <stop offset="100%" stopColor="#fbbf24" />
-                      </linearGradient>
-                    </defs>
-                  </svg>
 
-                  {/* Vinyl disc — ALWAYS spinning */}
-                  <div className="absolute inset-0 rounded-full overflow-hidden" style={{
-                    background: "radial-gradient(circle at 50% 50%,#2d1b69 0%,#1a0f3a 42%,#0f0b20 100%)",
-                    boxShadow: "0 0 40px rgba(192,132,252,0.22), inset 0 0 24px rgba(0,0,0,0.5)",
-                    animation: "vinylSpin 4s linear infinite",
-                  }}>
-                    {[38, 52, 65, 77].map((r, i) => (
-                      <div key={i} className="absolute rounded-full border border-white/5"
-                        style={{ width: r*2, height: r*2, top: "50%", left: "50%", transform: "translate(-50%,-50%)" }}
-                      />
-                    ))}
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 rounded-full"
-                      style={{ background: "radial-gradient(circle,#fbbf24 0%,#f59e0b 100%)", boxShadow: "0 0 12px rgba(251,191,36,0.85)" }}
-                    />
+                    {/* Lưới loa và Đồng hồ dò tần số */}
+                    <div className="flex gap-3.5 h-full items-center">
+                      {/* Lưới màng loa 2D */}
+                      <div 
+                        className="w-[90px] h-[85px] rounded-2xl border-[3px] border-[#3c2a2f] bg-[#eed9c4] flex items-center justify-center relative overflow-hidden"
+                      >
+                        <div className="absolute inset-2 rounded-full border-[3px] border-dashed border-[#3c2a2f]/40 flex items-center justify-center">
+                          <div 
+                            className={`w-6 h-6 rounded-full bg-[#3c2a2f] flex items-center justify-center ${slideshowPlaying ? 'animate-ping' : ''}`}
+                            style={{ animationDuration: '2s' }}
+                          >
+                            <div className="w-2.5 h-2.5 rounded-full bg-[#f5d0a9]" />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Đồng hồ trượt tần số và núm vặn */}
+                      <div className="flex-1 h-[85px] flex flex-col justify-between py-0.5">
+                        <div 
+                          className="h-9 rounded-xl border-[3px] border-[#3c2a2f] bg-[#fff9db] flex flex-col justify-center px-1.5 relative overflow-hidden"
+                        >
+                          <div className="flex justify-between text-[7px] font-black text-[#3c2a2f]/60">
+                            <span>AM</span>
+                            <span>•</span>
+                            <span>FM</span>
+                          </div>
+                          
+                          {/* Kim dò màu đỏ chạy động */}
+                          <div 
+                            className="absolute top-0 bottom-0 w-0.5 bg-red-500"
+                            style={{ 
+                              left: `${15 + (slideshowProgress * 0.7)}%`,
+                              transition: "left 0.1s linear" 
+                            }}
+                          />
+                        </div>
+
+                        {/* Núm vặn 2D */}
+                        <div className="flex justify-around items-center">
+                          {/* Núm Volume */}
+                          <div className="flex flex-col items-center">
+                            <div 
+                              className={`w-6 h-6 rounded-full border-[3px] border-[#3c2a2f] bg-[#e3a87c] flex items-center justify-center ${slideshowMusicOn ? 'rotate-45' : '-rotate-45'} transition-transform`}
+                            >
+                              <div className="w-1 h-1.5 bg-[#3c2a2f] -translate-y-1 rounded-full" />
+                            </div>
+                          </div>
+
+                          {/* Núm Tuning */}
+                          <div className="flex flex-col items-center">
+                            <div 
+                              className="w-6 h-6 rounded-full border-[3px] border-[#3c2a2f] bg-[#e3a87c] flex items-center justify-center"
+                              style={{ transform: `rotate(${slideshowProgress * 3.6}deg)` }}
+                            >
+                              <div className="w-1 h-1.5 bg-[#3c2a2f] -translate-y-1 rounded-full" />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
-                  {/* Orbiting satellite dots */}
-                  <div style={{
-                    position: "absolute", top: "50%", left: "50%",
-                    width: 8, height: 8, marginTop: -4, marginLeft: -4,
-                    borderRadius: "50%", background: "#fbbf24",
-                    boxShadow: "0 0 8px rgba(251,191,36,0.95)",
-                    transformOrigin: "center center",
-                    animation: "orbitDot1 6s linear infinite",
-                  }} />
-                  <div style={{
-                    position: "absolute", top: "50%", left: "50%",
-                    width: 6, height: 6, marginTop: -3, marginLeft: -3,
-                    borderRadius: "50%", background: "#c084fc",
-                    boxShadow: "0 0 6px rgba(192,132,252,0.95)",
-                    transformOrigin: "center center",
-                    animation: "orbitDot2 9s linear infinite",
-                  }} />
+                  {/* Nốt nhạc bay màu tối đồng bộ 2D */}
+                  {slideshowPlaying && (
+                    <div className="absolute left-6 top-8 w-16 h-16 pointer-events-none z-10 overflow-visible">
+                      {[
+                        { id: 1, text: "🎵", left: "10%", delay: "0s", size: "0.95rem", duration: "2.4s" },
+                        { id: 2, text: "🎶", left: "32%", delay: "0.6s", size: "0.8rem", duration: "3s" },
+                        { id: 3, text: "♥", left: "20%", delay: "1.2s", size: "0.85rem", duration: "2.1s" },
+                        { id: 4, text: "🎵", left: "45%", delay: "1.8s", size: "0.7rem", duration: "2.7s" },
+                      ].map((n) => (
+                        <span
+                          key={n.id}
+                          className="absolute opacity-0 text-[#3c2a2f] font-bold"
+                          style={{
+                            left: n.left,
+                            fontSize: n.size,
+                            animation: `radioNoteRise ${n.duration} ${n.delay} infinite ease-out`,
+                          }}
+                        >
+                          {n.text}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Song info */}
                 <div className="text-center" style={{ maxWidth: 220 }}>
-                  <p className="font-black leading-snug" style={{
+                  <p className="font-black leading-snug text-[#3c2a2f]" style={{
                     fontSize: "clamp(0.78rem,1.6vw,0.92rem)",
-                    color: "rgba(255,255,255,0.92)", fontStyle: "italic",
-                    textShadow: "0 2px 12px rgba(192,132,252,0.5)",
+                    fontStyle: "italic",
+                    textShadow: "0 2px 8px rgba(255,255,255,0.8)",
                   }}>
                     {customMusicName}
                   </p>
-                  <p className="mt-0.5 text-[10px] font-bold tracking-[0.22em] uppercase" style={{ color: "rgba(192,132,252,0.65)" }}>
+                  <p className="mt-0.5 text-[10px] font-bold tracking-[0.22em] uppercase text-[#3c2a2f]/60">
                     HỒI ỨC
                   </p>
-                  <div className="my-2 h-px" style={{ background: "linear-gradient(90deg,transparent,rgba(192,132,252,0.35),transparent)" }} />
+                  <div className="my-2 h-px" style={{ background: "linear-gradient(90deg,transparent,rgba(60,42,47,0.15),transparent)" }} />
 
                   {/* Upload music */}
-                  <label className="inline-flex items-center gap-1.5 cursor-pointer rounded-full border border-purple-400/35 bg-purple-900/30 hover:bg-purple-800/45 px-3.5 py-1.5 text-xs font-black transition-all hover:scale-105" style={{ color: "rgba(216,180,254,0.9)" }}>
-                    ♪ Tải nhạc lên
-                    <input ref={musicInputRef} type="file" accept="audio/*" className="hidden" onChange={handleMusicUpload} />
-                  </label>
+                  <button
+                    onClick={() => setIsOpenMusicModal(true)}
+                    className="inline-flex items-center gap-1.5 cursor-pointer rounded-full border border-[#3c2a2f]/15 bg-[#fffcf7]/50 backdrop-blur-sm px-3.5 py-1.5 text-xs font-black text-[#3c2a2f] transition-all hover:bg-white/80 hover:scale-105 active:scale-95 shadow-sm"
+                  >
+                    ♪ Danh sách nhạc
+                  </button>
                 </div>
               </div>
 
@@ -1461,10 +1772,12 @@ export function AlbumSpace({
 
                 {/* Photo frame container — no overflow hidden, with perspective */}
                 <div
-                  className="relative flex-shrink-0"
+                  className="relative flex-shrink-0 transition-all duration-500 ease-in-out"
                   style={{
-                    width: "100%", maxWidth: 460,
                     height: "clamp(230px, 44vh, 370px)",
+                    width: "auto",
+                    aspectRatio: currentRatio ? `${currentRatio}` : "1.25",
+                    maxWidth: "min(100%, 460px)",
                     perspective: "1000px",
                   }}
                 >
@@ -1494,12 +1807,21 @@ export function AlbumSpace({
                             ? "0 0 55px rgba(192,132,252,0.22), 0 24px 50px rgba(0,0,0,0.6)"
                             : "0 10px 25px rgba(0,0,0,0.4)",
                         }}
-                        className="absolute inset-0 rounded-2xl overflow-hidden border border-white/10 bg-black"
+                        className="absolute inset-0 rounded-2xl overflow-hidden"
                       >
                         {/* The photo image */}
                         <img
-                          src={resolveDirectImageUrl(photo.image_url)}
+                          src={resolveDirectImageUrl(photo.image_url) || undefined}
                           alt="Slideshow Memory"
+                          onLoad={(e) => {
+                            const { naturalWidth, naturalHeight } = e.currentTarget;
+                            if (naturalWidth && naturalHeight) {
+                              setSlideshowAspectRatios((prev) => ({
+                                ...prev,
+                                [photo.id]: naturalWidth / naturalHeight,
+                              }));
+                            }
+                          }}
                           onError={(e) => { e.currentTarget.src = "https://images.unsplash.com/photo-1518199266791-5375a83190b7?q=80&w=600"; }}
                           style={{
                             position: "absolute",
@@ -1513,10 +1835,7 @@ export function AlbumSpace({
                           }}
                         />
 
-                        {/* Vignette */}
-                        <div className="absolute inset-0 pointer-events-none" style={{
-                          background: "radial-gradient(ellipse at center,transparent 45%,rgba(0,0,0,0.5) 100%)",
-                        }} />
+                        {/* No Vignette - clean image view */}
 
                         {/* Location badge */}
                         {isCurrent && photo.location && (
@@ -1535,18 +1854,17 @@ export function AlbumSpace({
                   className="text-center flex-shrink-0"
                   style={{ animation: `slideCaptionIn 0.6s ${PHOTO_TRANSITION_DURATION}ms ease both`, maxWidth: 420 }}
                 >
-                  <p className="font-black leading-relaxed" style={{
+                  <p className="font-black leading-relaxed text-[#3c2a2f]" style={{
                     fontSize: "clamp(0.85rem,1.8vw,1.05rem)",
                     fontStyle: "italic",
-                    color: "rgba(255,255,255,0.9)",
-                    textShadow: "0 2px 14px rgba(192,132,252,0.4)",
+                    textShadow: "0 2px 8px rgba(255,255,255,0.8)",
                   }}>
                     &ldquo;{caption.text || "Mỗi tấm ảnh là một trang nhật ký không lời..."}&rdquo;
                   </p>
-                  <p className="mt-1.5 text-xs font-bold tracking-[0.22em]" style={{ color: "rgba(192,132,252,0.55)" }}>
-                    — ký niệm —
+                  <p className="mt-1.5 text-xs font-bold tracking-[0.22em] text-[#3c2a2f]/60">
+                    — kỷ niệm —
                   </p>
-                  <div className="mt-2 mx-auto h-0.5 rounded-full" style={{ maxWidth: 100, background: "linear-gradient(90deg,transparent,rgba(251,191,36,0.55),transparent)" }} />
+                  <div className="mt-2 mx-auto h-0.5 rounded-full" style={{ maxWidth: 100, background: "linear-gradient(90deg,transparent,rgba(60,42,47,0.15),transparent)" }} />
                 </div>
               </div>
 
@@ -1565,6 +1883,181 @@ export function AlbumSpace({
         cancelText="Hủy"
         isDangerous={true}
       />
+
+      {/* MODAL 4: MUSIC LIST & MANAGEMENT (CLOUDINARY SIGNED UPLOAD) */}
+      {isOpenMusicModal && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 backdrop-blur-md bg-black/45">
+          <div className="w-full max-w-lg rounded-3xl border border-[var(--color-border)] bg-[var(--color-card)] p-5 sm:p-6 shadow-2xl relative overflow-hidden flex flex-col max-h-[85vh] animate-scale-up">
+            
+            <button
+              onClick={() => {
+                setIsOpenMusicModal(false);
+                setSelectedSongFile(null);
+                setSongUploadTitle("");
+              }}
+              className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-[var(--color-soft)] text-[var(--color-muted)] transition"
+            >
+              <X className="size-4" />
+            </button>
+
+            <h2 className="text-base font-black flex items-center gap-2 mb-4 text-[var(--color-text)]">
+              🎵 Thư viện nhạc nền trình chiếu
+            </h2>
+
+            {/* Upload Section */}
+            <form onSubmit={handleSongUploadSubmit} className="bg-[var(--color-soft)]/40 border border-[var(--color-border)]/40 rounded-2xl p-3 mb-4 space-y-3 flex-shrink-0">
+              <p className="text-[10px] font-black text-[var(--color-faint)] uppercase tracking-wider">
+                Thêm bài hát mới (Tải lên Cloudinary)
+              </p>
+
+              <div className="flex items-center gap-3">
+                <label className="cursor-pointer inline-flex items-center justify-center rounded-xl bg-[var(--color-primary)] px-3.5 py-2 text-xs font-black text-white hover:bg-[var(--color-primary-hover)] transition active:scale-95 disabled:opacity-50">
+                  {selectedSongFile ? "Chọn file khác" : "Chọn file MP3"}
+                  <input
+                    type="file"
+                    accept="audio/mp3,audio/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        setSelectedSongFile(file);
+                        setSongUploadTitle(file.name.replace(/\.[^/.]+$/, "").slice(0, 40));
+                      }
+                    }}
+                    className="hidden"
+                    disabled={isUploadingSong}
+                  />
+                </label>
+                
+                <span className="text-xs font-semibold text-[var(--color-muted)] truncate max-w-[200px]">
+                  {selectedSongFile ? selectedSongFile.name : "Chưa chọn file nào"}
+                </span>
+              </div>
+
+              {selectedSongFile && (
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="text"
+                    placeholder="Tên hiển thị bài hát..."
+                    value={songUploadTitle}
+                    onChange={(e) => setSongUploadTitle(e.target.value)}
+                    required
+                    maxLength={40}
+                    className="flex-1 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-1.5 text-xs font-semibold outline-none focus:border-[var(--color-primary)] text-[var(--color-text)]"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isUploadingSong}
+                    className="rounded-xl bg-[var(--color-primary)] px-4 py-1.5 text-xs font-black text-white hover:bg-[var(--color-primary-hover)] transition disabled:opacity-50 flex items-center gap-1"
+                  >
+                    {isUploadingSong ? (
+                      <>
+                        <Loader2 className="size-3 animate-spin" />
+                        Đang lưu...
+                      </>
+                    ) : (
+                      "Lưu bài hát"
+                    )}
+                  </button>
+                </div>
+              )}
+            </form>
+
+            {/* Search Input */}
+            <div className="mb-3 flex-shrink-0">
+              <input
+                type="text"
+                placeholder="Tìm kiếm bài hát..."
+                value={searchSongQuery}
+                onChange={(e) => setSearchSongQuery(e.target.value)}
+                className="w-full rounded-full border border-[var(--color-border)] bg-[var(--color-soft)]/40 px-4 py-2 text-xs font-semibold outline-none focus:border-[var(--color-primary)] text-[var(--color-text)]"
+              />
+            </div>
+
+            {/* Playlist display container */}
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-[150px]">
+              <p className="text-[10px] font-black text-[var(--color-faint)] uppercase tracking-wider mb-2">
+                Danh sách bài hát
+              </p>
+
+              {/* Default Song (System) */}
+              {("Phép Màu (From Đàn Cá Gỗ)".toLowerCase().includes(searchSongQuery.toLowerCase())) && (
+                <div
+                  onClick={() => handleSelectSong("Phép Màu (From Đàn Cá Gỗ)", "/slideshow-music.mp3")}
+                  className={`rounded-2xl border p-3 flex items-center justify-between cursor-pointer transition-all ${
+                    customMusicUrl === "/slideshow-music.mp3"
+                      ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)]/10 shadow-sm"
+                      : "border-[var(--color-border)]/30 bg-[var(--color-card)] hover:bg-[var(--color-soft)]/50"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-base">🎵</span>
+                    <div>
+                      <p className="text-xs font-black text-[var(--color-text)]">
+                        Phép Màu (From Đàn Cá Gỗ)
+                      </p>
+                      <p className="text-[10px] font-bold text-emerald-600">
+                        Nhạc hệ thống • Luôn sẵn sàng
+                      </p>
+                    </div>
+                  </div>
+                  {customMusicUrl === "/slideshow-music.mp3" && (
+                    <span className="text-xs font-black text-[var(--color-primary)]">Đang phát</span>
+                  )}
+                </div>
+              )}
+
+              {/* Custom songs */}
+              {songsList.filter(s => s.title.toLowerCase().includes(searchSongQuery.toLowerCase())).length > 0 ? (
+                songsList
+                  .filter(s => s.title.toLowerCase().includes(searchSongQuery.toLowerCase()))
+                  .map((song) => (
+                    <div
+                      key={song.id}
+                      onClick={() => handleSelectSong(song.title, song.url)}
+                      className={`rounded-2xl border p-3 flex items-center justify-between cursor-pointer transition-all ${
+                        customMusicUrl === song.url
+                          ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)]/10 shadow-sm"
+                          : "border-[var(--color-border)]/30 bg-[var(--color-card)] hover:bg-[var(--color-soft)]/50"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1 mr-2">
+                        <span className="text-base flex-shrink-0">🎶</span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-black text-[var(--color-text)] truncate">
+                            {song.title}
+                          </p>
+                          <p className="text-[9px] font-bold text-[var(--color-faint)] truncate">
+                            Tải lên bởi bạn bè
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {customMusicUrl === song.url && (
+                          <span className="text-[10px] font-black text-[var(--color-primary)] mr-1">Đang phát</span>
+                        )}
+                        <button
+                          onClick={(e) => handleDeleteSong(song.id, e)}
+                          className="p-1.5 rounded-full hover:bg-rose-100 text-rose-600 transition"
+                          title="Xóa bài hát"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+              ) : (
+                songsList.length === 0 && (
+                  <p className="text-center text-xs text-[var(--color-muted)] italic py-6">
+                    Chưa có bài hát tải lên riêng tư nào. Hãy chọn file nhạc ở trên và lưu lại nhé! 🌻
+                  </p>
+                )
+              )}
+            </div>
+
+          </div>
+        </div>
+      )}
     </div>
   );
 }

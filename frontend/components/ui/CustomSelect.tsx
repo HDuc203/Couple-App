@@ -48,16 +48,16 @@ export function CustomSelect({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex h-10 w-full items-center justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-soft)]/50 px-3 py-2.5 text-xs font-bold outline-none focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary)] transition text-[var(--color-text)] cursor-pointer"
+        className="flex h-11 w-full items-center justify-between rounded-xl border border-[var(--color-border)]/50 bg-[var(--color-soft)]/40 hover:bg-[var(--color-soft)]/75 hover:border-[var(--color-primary)]/50 px-2.5 py-2 text-sm font-extrabold outline-none focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary)]/45 transition-all duration-200 text-[var(--color-text)] cursor-pointer shadow-sm hover:shadow"
       >
-        <span className="flex items-center gap-2 truncate">
+        <span className="flex items-center gap-1 truncate">
           {selectedOption ? (
             <>
               {selectedOption.emoji && <span className="text-sm shrink-0">{selectedOption.emoji}</span>}
               <span className="truncate">{selectedOption.label}</span>
             </>
           ) : (
-            <span className="text-[var(--color-faint)] font-semibold">{placeholder}</span>
+            <span className="text-[var(--color-faint)] font-semibold text-sm">{placeholder}</span>
           )}
         </span>
         <ChevronDown
@@ -81,7 +81,7 @@ export function CustomSelect({
                     onChange(option.value);
                     setIsOpen(false);
                   }}
-                  className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-left transition cursor-pointer ${
+                  className={`flex w-full items-center gap-1.5 rounded-xl px-2.5 py-2 text-sm font-extrabold text-left transition cursor-pointer ${
                     isSelected
                       ? "bg-[var(--color-primary-soft)]/45 text-[var(--color-primary)] font-black border border-[var(--color-primary)]/20"
                       : "text-[var(--color-text)] hover:bg-[var(--color-soft)]"

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useTransition } from "react";
+import { uploadToCloudinary } from "@/lib/cloudinary";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createCoupleAction, joinCoupleAction, disconnectCoupleAction, updateLoveStartDateAction } from "@/app/settings/actions";
 import {
@@ -885,21 +886,29 @@ function ProfileSection({ profile }: { profile: Profile }) {
 
         setErrorMsg("");
         setIsSaving(true);
-        const supabase = createClient();
-        const { error } = await supabase
-          .from("profiles")
-          .update({ avatar_url: dataUrl })
-          .eq("id", profile.id);
+        try {
+          // Upload base64 image data URL to Cloudinary under the 'avatars' folder
+          const secureUrl = await uploadToCloudinary(dataUrl, "avatars");
 
-        setIsSaving(false);
-        if (error) {
-          setErrorMsg(`Không thể tải lên ảnh đại diện: ${error.message}`);
-        } else {
-          setSuccessMsg("Cập nhật ảnh đại diện thành công! 📸");
-          startTransition(() => {
-            router.refresh();
-          });
-          setTimeout(() => setSuccessMsg(""), 4000);
+          const supabase = createClient();
+          const { error } = await supabase
+            .from("profiles")
+            .update({ avatar_url: secureUrl })
+            .eq("id", profile.id);
+
+          if (error) {
+            setErrorMsg(`Không thể cập nhật ảnh đại diện: ${error.message}`);
+          } else {
+            setSuccessMsg("Cập nhật ảnh đại diện thành công! 📸");
+            startTransition(() => {
+              router.refresh();
+            });
+            setTimeout(() => setSuccessMsg(""), 4000);
+          }
+        } catch (uploadError: any) {
+          setErrorMsg(`Không thể tải lên Cloudinary: ${uploadError.message}`);
+        } finally {
+          setIsSaving(false);
         }
       };
       img.src = event.target?.result as string;

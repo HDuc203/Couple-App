@@ -1359,6 +1359,59 @@ body.slideshow-active .fixed.top-5.right-5 {
   }
 }
 
+/* Hiệu ứng nốt nhạc bay lên từ đài Radio */
+@keyframes radioNoteRise {
+  0% {
+    transform: translateY(0) translateX(0) scale(0.6) rotate(0deg);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.8;
+  }
+  85% {
+    opacity: 0.4;
+  }
+  100% {
+    transform: translateY(-90px) translateX(18px) scale(1.1) rotate(25deg);
+    opacity: 0;
+  }
+}
+
+/* Hiệu ứng cánh hoa hướng dương rung rinh bay trong gió */
+@keyframes slideSunflowerSway {
+  0% {
+    transform: translateY(10px) translateX(0) scale(0.8) rotate(0deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.75;
+  }
+  35% {
+    transform: translateY(-35vh) translateX(35px) scale(1) rotate(60deg);
+  }
+  65% {
+    transform: translateY(-70vh) translateX(-25px) scale(0.9) rotate(150deg);
+  }
+  85% {
+    opacity: 0.4;
+  }
+  100% {
+    transform: translateY(-105vh) translateX(15px) scale(0.7) rotate(240deg);
+    opacity: 0;
+  }
+}
+
+/* Ánh nắng bình minh co giãn nhẹ nhàng */
+@keyframes sunbeamPulse {
+  0%, 100% {
+    opacity: 0.16;
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    opacity: 0.32;
+    transform: scale(1.08) rotate(3deg);
+  }
+}
 
 /* ══════════════════════════════════════════════════════════════════════════ */
 /* ░░░  SỔ TAY NGƯỜI ẤY — Notebook Feature CSS  ░░░                          */

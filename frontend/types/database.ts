@@ -73,6 +73,8 @@ export type Database = {
           invite_code: string;
           love_start_date: string | null;
           created_at: string | null;
+          active_song_url: string | null;
+          active_song_title: string | null;
         };
         Insert: {
           id?: string;
@@ -80,6 +82,8 @@ export type Database = {
           invite_code: string;
           love_start_date?: string | null;
           created_at?: string | null;
+          active_song_url?: string | null;
+          active_song_title?: string | null;
         };
         Update: {
           id?: string;
@@ -87,6 +91,8 @@ export type Database = {
           invite_code?: string;
           love_start_date?: string | null;
           created_at?: string | null;
+          active_song_url?: string | null;
+          active_song_title?: string | null;
         };
         Relationships: [];
       };
@@ -117,6 +123,33 @@ export type Database = {
           content?: string;
           is_private?: boolean | null;
           created_at?: string | null;
+        };
+        Relationships: [];
+      };
+      slideshow_songs: {
+        Row: {
+          id: string;
+          couple_id: string | null;
+          title: string;
+          url: string;
+          created_at: string;
+          created_by: string | null;
+        };
+        Insert: {
+          id?: string;
+          couple_id?: string | null;
+          title: string;
+          url: string;
+          created_at?: string;
+          created_by?: string | null;
+        };
+        Update: {
+          id?: string;
+          couple_id?: string | null;
+          title?: string;
+          url?: string;
+          created_at?: string;
+          created_by?: string | null;
         };
         Relationships: [];
       };

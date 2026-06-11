@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -242,9 +243,63 @@ export function DashboardHome({
   const router = useRouter();
   const couple = currentCouple?.couple ?? null;
   const togetherDays = daysTogether(couple?.love_start_date ?? null);
-  const togetherCopy = togetherDays
-    ? `Hôm nay là ngày thứ ${togetherDays} bên nhau`
-    : "Thêm ngày bắt đầu yêu để app đếm từng ngày cho hai bạn";
+
+  // Greeting messages that rotate daily based on display name
+  const dailyMessages = useMemo(() => [
+    `Chúc ${profile.display_name} một ngày mới thật ngọt ngào và ngập tràn niềm vui! 🌸`,
+    "Hôm nay bạn đã gửi những lời yêu thương dịu dàng tới đối phương chưa? 💕",
+    "Một ngày mới lại bắt đầu, cùng nhau viết tiếp những chương thật ngọt ngào nhé! ✨",
+    "Nhớ uống nước đầy đủ và giữ nụ cười thật tươi hôm nay nhé! ☀️",
+    "Mỗi ngày bên nhau đều là một món quà tuyệt vời nhất. Chúc bạn ngày mới hạnh phúc! 🥰",
+    "Gửi một cái ôm ấm áp và lời chúc ngày mới ngập tràn may mắn tới bạn! 🍀",
+    "Chúc hai bạn hôm nay có thật nhiều tiếng cười và khoảnh khắc đáng nhớ! 💫"
+  ], [profile.display_name]);
+
+  const greetingMessage = useMemo(() => {
+    const todayIndex = new Date().getDate() % dailyMessages.length;
+    return dailyMessages[todayIndex];
+  }, [dailyMessages]);
+
+  // Romantic daily quotes for the scrapbook card
+  const romanticQuotes = useMemo(() => [
+    {
+      title: "Mỗi ngày trôi qua đều là một món quà...",
+      desc: "Khi chúng ta có nhau trong đời. Cùng nhau lưu giữ thêm thật nhiều kỷ niệm ngọt ngào nhé! 💕"
+    },
+    {
+      title: "Tình yêu không phải là tìm kiếm...",
+      desc: "Mà là cùng nhau xây dựng nên một thế giới nhỏ ấm áp của riêng hai ta từng ngày. 🌸"
+    },
+    {
+      title: "Hạnh phúc lớn nhất của đời người...",
+      desc: "Là mỗi sớm mai thức dậy biết rằng luôn có một người đang nhớ và yêu thương mình vô điều kiện. ✨"
+    },
+    {
+      title: "Bên nhau bình yên qua những ngày giông bão...",
+      desc: "Từng giây từng phút trôi qua đều hóa ngọt ngào khi có sự hiện diện của người thương. ☀️"
+    },
+    {
+      title: "Thư viện kỷ niệm này là minh chứng...",
+      desc: "Cho những nụ cười, những cái ôm ấm áp và cả những câu chuyện giản dị nhưng đong đầy tình yêu. 🥰"
+    },
+    {
+      title: "Dù thế giới ngoài kia có vội vã đến đâu...",
+      desc: "Thì góc nhỏ này vẫn luôn là nơi bình yên nhất dành riêng cho tình yêu của hai ta. 🍀"
+    },
+    {
+      title: "Có những ngày bình thường đến lạ kỳ...",
+      desc: "Nhưng chỉ cần được đi cùng nhau, mọi điều nhỏ bé nhất cũng hóa thành kỳ diệu. 💫"
+    },
+    {
+      title: "Tình yêu giống như một bản tình ca...",
+      desc: "Mỗi ngày trôi qua là một nốt nhạc ngọt ngào được viết tiếp bởi hai tâm hồn đồng điệu. 🎵"
+    }
+  ], []);
+
+  const todayQuote = useMemo(() => {
+    const todayIndex = new Date().getDate() % romanticQuotes.length;
+    return romanticQuotes[todayIndex];
+  }, [romanticQuotes]);
 
   const partnerName = partnerProfile?.display_name ?? "Người ấy";
   const partnerBdayDays =
@@ -268,19 +323,27 @@ export function DashboardHome({
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-[var(--color-faint)]">
               Xin chào
             </p>
-            <h1 className="mt-1 text-2xl font-black md:text-3xl">
-              {profile.display_name}
-            </h1>
-            <p className="mt-1 text-sm font-semibold text-[var(--color-muted)]">
-              {togetherCopy}
+            <div className="mt-2 flex items-center gap-3">
+              {profile.avatar_url ? (
+                <img
+                  src={profile.avatar_url}
+                  alt="My Avatar"
+                  onError={(e) => { e.currentTarget.src = ""; }}
+                  className="size-10 md:size-12 rounded-full object-cover border-2 border-[var(--color-primary-soft)] shadow-sm"
+                />
+              ) : (
+                <div className="grid size-10 md:size-12 place-items-center rounded-full bg-[var(--color-primary-soft)] text-sm font-black text-[var(--color-primary)] border border-[var(--color-border)]/50">
+                  {profile.display_name.slice(0, 2).toUpperCase()}
+                </div>
+              )}
+              <h1 className="text-2xl font-black md:text-3xl text-[var(--color-text)]">
+                {profile.display_name}
+              </h1>
+            </div>
+            <p className="mt-2.5 text-xs md:text-sm font-semibold text-[var(--color-muted)]">
+              {greetingMessage}
             </p>
           </div>
-          <Link
-            href="/settings"
-            className="inline-flex w-fit items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-xs font-black text-[var(--color-primary)] transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-soft)] active:scale-[0.99]"
-          >
-            {couple ? "Quản lý kết nối" : "Kết nối ngay"}
-          </Link>
         </div>
       </header>
 
@@ -330,12 +393,12 @@ export function DashboardHome({
               </p>
             </div>
 
-            <div className="self-end rounded-[1.5rem] bg-[var(--color-soft)] p-5">
+            <div className="self-end rounded-[1.5rem] bg-[var(--color-soft)] p-5 animate-fade-in">
               <p className="text-sm font-black text-[var(--color-text)]">
-                Một ngày nhỏ cũng đáng được giữ lại.
+                {todayQuote.title}
               </p>
               <p className="mt-2 text-sm font-semibold leading-6 text-[var(--color-muted)]">
-                Countdown này sẽ là điểm chạm đầu tiên mỗi khi hai bạn mở app.
+                {todayQuote.desc}
               </p>
             </div>
           </div>
@@ -370,13 +433,24 @@ export function DashboardHome({
               <div className="flex items-center gap-4">
                 <PartnerAvatar partner={partnerProfile} />
                 <div className="min-w-0">
-                  <p className="text-lg font-black leading-tight text-[var(--color-text)] truncate">
-                    {partnerProfile?.display_name ?? "Đang chờ người ấy"}
-                  </p>
-                  <p className="mt-0.5 text-sm font-semibold text-[var(--color-muted)] leading-snug">
+                  {partnerProfile?.nickname ? (
+                    <div className="min-w-0">
+                      <p className="text-base font-black leading-tight text-[var(--color-text)] truncate">
+                        {partnerProfile.nickname}
+                      </p>
+                      <p className="text-xs font-semibold text-[var(--color-muted)] truncate">
+                        @{partnerProfile.display_name}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-base font-black leading-tight text-[var(--color-text)] truncate">
+                      {partnerProfile?.display_name ?? "Đang chờ người ấy"}
+                    </p>
+                  )}
+                  <p className="mt-1.5 text-xs font-semibold text-[var(--color-muted)] italic leading-snug line-clamp-2">
                     {couple.love_start_date
-                      ? `Bên nhau từ ${formatDate(couple.love_start_date)}`
-                      : `Mã mời: ${couple.invite_code}`}
+                      ? "Yêu thương là cùng nhau sẻ chia từng khoảnh khắc ngọt ngào... 💕"
+                      : `Mã mời kết nối: ${couple.invite_code}`}
                   </p>
                 </div>
               </div>
